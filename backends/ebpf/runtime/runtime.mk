@@ -49,7 +49,7 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.c
 	@echo "Creating folder: $(dir $(OBJECTS))"
 	@mkdir -p $(dir $(OBJECTS))
 	@echo "Compiling: $< -> $@"
-	$(GCC) $(CFLAGS) $(INCLUDES) $(LIBS) -MP -MMD -c $< -o $@
+	$(GCC) $(CFLAGS) $(INCLUDES) -MP -MMD -c $< -o $@
 
 # If the target file is missing, generate .c files with the P4 compiler
 $(BPFNAME).c: $(P4FILE)

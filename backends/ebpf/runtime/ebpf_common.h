@@ -19,9 +19,9 @@ limitations under the License.
  * It should be included with new target header files.
  */
 
-#include <stdio.h>      // printf
-#include <stdbool.h>    // true and false
-#include <linux/types.h>
+#include <stdio.h>          // printf
+#include <stdbool.h>        // true and false
+#include <linux/types.h>    // u8, u16, u32, u64
 
 typedef signed char s8;
 typedef unsigned char u8;

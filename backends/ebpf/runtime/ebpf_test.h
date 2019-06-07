@@ -31,7 +31,7 @@ limitations under the License.
 #define printk(fmt, ...)                                               \
                 ({                                                      \
                         char ____fmt[] = fmt;                           \
-                        printf(____fmt, sizeof(____fmt),      \
+                        printf(____fmt, sizeof(____fmt),                \
                                      ##__VA_ARGS__);                    \
                 })
 
@@ -55,32 +55,10 @@ struct sk_buff {
 #define BPF_EXIST   2 /* update existing element */
 #define BPF_F_LOCK  4 /* spin_lock-ed map_lookup/map_update */
 
+/* Support bpf map types */
 enum bpf_map_type {
-    BPF_MAP_TYPE_UNSPEC,
     BPF_MAP_TYPE_HASH,
     BPF_MAP_TYPE_ARRAY,
-    BPF_MAP_TYPE_PROG_ARRAY,
-    BPF_MAP_TYPE_PERF_EVENT_ARRAY,
-    BPF_MAP_TYPE_PERCPU_HASH,
-    BPF_MAP_TYPE_PERCPU_ARRAY,
-    BPF_MAP_TYPE_STACK_TRACE,
-    BPF_MAP_TYPE_CGROUP_ARRAY,
-    BPF_MAP_TYPE_LRU_HASH,
-    BPF_MAP_TYPE_LRU_PERCPU_HASH,
-    BPF_MAP_TYPE_LPM_TRIE,
-    BPF_MAP_TYPE_ARRAY_OF_MAPS,
-    BPF_MAP_TYPE_HASH_OF_MAPS,
-    BPF_MAP_TYPE_DEVMAP,
-    BPF_MAP_TYPE_SOCKMAP,
-    BPF_MAP_TYPE_CPUMAP,
-    BPF_MAP_TYPE_XSKMAP,
-    BPF_MAP_TYPE_SOCKHASH,
-    BPF_MAP_TYPE_CGROUP_STORAGE,
-    BPF_MAP_TYPE_REUSEPORT_SOCKARRAY,
-    BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE,
-    BPF_MAP_TYPE_QUEUE,
-    BPF_MAP_TYPE_STACK,
-    BPF_MAP_TYPE_SK_STORAGE,
 };
 
 
@@ -111,7 +89,6 @@ static inline void print_n_bytes(void *receiveBuffer, int num) {
         printf("%02x", ((unsigned char *)receiveBuffer)[i]);
     printf("\n");
 }
-
 
 /* These should be automatically generated and included in the generated x.h header file */
 extern struct bpf_table tables[];
