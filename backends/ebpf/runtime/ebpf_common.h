@@ -20,8 +20,8 @@ limitations under the License.
  */
 
 #include <stdio.h>      // printf
-#include <linux/bpf.h>  // types, and general bpf definitions
 #include <stdbool.h>    // true and false
+#include <linux/types.h>
 
 typedef signed char s8;
 typedef unsigned char u8;
