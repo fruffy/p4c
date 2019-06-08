@@ -23,18 +23,33 @@ limitations under the License.
 #ifndef BACKENDS_EBPF_RUNTIME_EBPF_KERNEL_H_
 #define BACKENDS_EBPF_RUNTIME_EBPF_KERNEL_H_
 
-#include <linux/pkt_cls.h>  // TC_ACT_OK, TC_ACT_SHOT
-#include <string.h>         // memset()
-#include <unistd.h>         // syscall()
-#include <sys/syscall.h>    // __NR_bpf
-#include "linux/bpf.h"  // types, and general bpf definitions
 #include "ebpf_common.h"
 
 
-#ifdef CONTROL_PLANE
-#include "libbpf.h"
-#include "bpf.h"
-#else
+/* If we operate in user space we only need to include bpf.h and
+ * define the userspace API macros.
+ * For kernel programs we need to specify a list of kernel helpers. These are
+ * taken from here: https://github.com/torvalds/linux/blob/master/tools/testing/selftests/bpf/bpf_helpers.h
+ */
+#ifdef CONTROL_PLANE // BEGIN EBPF USER SPACE DEFINITIONS
+#include "bpf.h" // bpf_obj_get/pin, bpf_map_update_elem
+
+#define BPF_USER_MAP_UPDATE_ELEM(index, key, value, flags)\
+    bpf_map_update_elem(index, key, value, flags)
+#define BPF_OBJ_PIN(table, name) bpf_obj_pin(table, name)
+#define BPF_OBJ_GET(name) bpf_obj_get(name)
+
+#else // BEGIN EBPF KERNEL DEFINITIONS
+#include <linux/pkt_cls.h>  // TC_ACT_OK, TC_ACT_SHOT
+#include "linux/bpf.h"  // types, and general bpf definitions
+
+#define bpf_printk(fmt, ...)                                            \
+                ({                                                      \
+                        char ____fmt[] = fmt;                           \
+                        bpf_trace_printk(____fmt, sizeof(____fmt),      \
+                                     ##__VA_ARGS__);                    \
+                })
+
 /* helper functions called from eBPF programs written in C */
 static void *(*bpf_map_lookup_elem)(void *map, const void *key) =
     (void *) BPF_FUNC_map_lookup_elem;
@@ -306,9 +321,6 @@ static int (*bpf_skb_adjust_room)(void *ctx, __s32 len_diff, __u32 mode, unsigne
         __u32 pinning;
     };
 
-#endif
-
-
 /** helper macro to place programs, maps, license in
  * different sections in elf_bpf file. Section names
  * are interpreted by elf_bpf loader
@@ -317,7 +329,6 @@ static int (*bpf_skb_adjust_room)(void *ctx, __s32 len_diff, __u32 mode, unsigne
 
 /* simple descriptor which replaces the kernel sk_buff structure */
 #define SK_BUFF struct __sk_buff
-
 
 #define REGISTER_START()
 /* Note: pinning exports the table name globally, do not remove */
@@ -330,16 +341,13 @@ struct bpf_elf_map SEC("maps") NAME = {          \
     .pinning     = 2,                \
     .flags       = 0,                \
 };
-
 #define REGISTER_END()
 
 #define BPF_MAP_LOOKUP_ELEM(table, key) \
     bpf_map_lookup_elem(&table, key)
 #define BPF_MAP_UPDATE_ELEM(table, key, value, flags) \
     bpf_map_update_elem(&table, key, value, flags)
-#define BPF_USER_MAP_UPDATE_ELEM(index, key, value, flags)\
-    bpf_map_update_elem(index, key, value, flags)
-#define BPF_OBJ_PIN(table, name) bpf_obj_pin(table, name)
-#define BPF_OBJ_GET(name) bpf_obj_get(name)
+
+#endif // END EBPF KERNEL DEFINITIONS
 
 #endif  // BACKENDS_EBPF_RUNTIME_EBPF_KERNEL_H_
