@@ -26,11 +26,6 @@ limitations under the License.
 #include "pcap_util.h"
 #include "ebpf_test.h"
 
-#define BPF_USER_MAP_UPDATE_ELEM(index, key, value, flags)\
-    registry_update_table_id(index, key, value, flags)
-#define BPF_OBJ_PIN(table, name) registry_add(table)
-#define BPF_OBJ_GET(name) registry_get_id(name)
-
 typedef int (*packet_filter)(SK_BUFF* s);
 
 void *run_and_record_output(packet_filter ebpf_filter, const char *pcap_base, pcap_list_t *pkt_list, int debug);
