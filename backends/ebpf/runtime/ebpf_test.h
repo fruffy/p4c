@@ -81,5 +81,4 @@ struct bpf_table tables[] = {
 extern struct bpf_table tables[];
 extern int ebpf_filter(struct sk_buff *skb);
 
-
 #endif  // BACKENDS_EBPF_RUNTIME_EBPF_USER_H_
