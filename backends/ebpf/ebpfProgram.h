@@ -74,6 +74,7 @@ class EBPFProgram : public EBPFObject {
     virtual void emitGeneratedComment(CodeBuilder* builder);
     virtual void emitPreamble(CodeBuilder* builder);
     virtual void emitTypes(CodeBuilder* builder);
+    virtual void declareTypes(CodeBuilder* builder);
     virtual void emitHeaderInstances(CodeBuilder* builder);
     virtual void emitLocalVariables(CodeBuilder* builder);
     virtual void emitPipeline(CodeBuilder* builder);

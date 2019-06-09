@@ -128,9 +128,9 @@ bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
         return false;
     }
     builder->emitIndent();
-    builder->append("switch (");
+    builder->append("switch (htons(");
     visit(expression->select);
-    builder->append(") ");
+    builder->append(")) ");
     builder->blockStart();
 
     for (auto e : expression->selectCases)
@@ -161,7 +161,6 @@ bool StateTranslationVisitor::preorder(const IR::SelectCase* selectCase) {
     builder->endOfStatement(true);
     return false;
 }
-
 void
 StateTranslationVisitor::compileExtractField(
     const IR::Expression* expr, cstring field, unsigned alignment, EBPFType* type) {
@@ -281,24 +280,29 @@ StateTranslationVisitor::compileExtract(const IR::Expression* destination) {
     builder->newline();
     builder->blockEnd(true);
 
-    unsigned alignment = 0;
-    for (auto f : ht->fields) {
-        auto ftype = state->parser->typeMap->getType(f);
-        auto etype = EBPFTypeFactory::instance->create(ftype);
-        auto et = dynamic_cast<IHasWidth*>(etype);
-        if (et == nullptr) {
-            ::error("Only headers with fixed widths supported %1%", f);
-            return;
-        }
-        compileExtractField(destination, f->name, alignment, etype);
-        alignment += et->widthInBits();
-        alignment %= 8;
-    }
+    builder->emitIndent();
+    builder->appendFormat("if (BPF_SKB_LOAD_BYTES(skb, BYTES(%s),&", program->offsetVar.c_str());
+    visit(destination);
+    builder->append(", sizeof(");
+    visit(destination);
+    builder->append(")) < 0) {");
+    builder->append("goto ");
+    builder->append(IR::ParserState::reject);
+    builder->append(";");
+    builder->append("}");
+    builder->emitIndent();
+    builder->appendFormat("%s += sizeof(", program->offsetVar.c_str());
+    visit(destination);
+    builder->append(") * 8");
+    builder->endOfStatement(true);
+    builder->newline();
 
     if (ht->is<IR::Type_Header>()) {
         builder->emitIndent();
-        visit(destination);
-        builder->appendLine(".ebpf_valid = 1;");
+        //visit(destination);
+        builder->appendFormat("%s_valid = true", ht->name.name);
+        builder->endOfStatement(true);
+
     }
 }
 

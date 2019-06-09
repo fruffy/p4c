@@ -76,11 +76,12 @@ struct bpf_table tables[] = {
     registry_lookup_table_elem(MAP_PATH"/"#table, key)
 #define BPF_MAP_UPDATE_ELEM(table, key, value, flags) \
     registry_update_table(MAP_PATH"/"#table, key, value, flags)
+#define BPF_SKB_LOAD_BYTES(ctx, off, to, len)  \
+    memcpy(ctx+off, to, len)
 #define BPF_USER_MAP_UPDATE_ELEM(index, key, value, flags)\
     registry_update_table_id(index, key, value, flags)
 #define BPF_OBJ_PIN(table, name) registry_add(table)
 #define BPF_OBJ_GET(name) registry_get_id(name)
-
 
 /* These should be automatically generated and included in the generated x.h header file */
 extern struct bpf_table tables[];

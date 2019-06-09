@@ -127,6 +127,8 @@ EBPFScalarType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
     } else {
         if (asPointer)
             builder->append("u8*");
+        else if(width < 8)
+            builder->appendFormat("u8 %s:%d", id.c_str(), width);
         else
             builder->appendFormat("u8 %s[%d]", id.c_str(), bytesRequired());
     }
@@ -164,24 +166,17 @@ EBPFStructType::EBPFStructType(const IR::Type_StructLike* strct) :
 void
 EBPFStructType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
     builder->append(kind);
+    builder->appendFormat(" %s ", name.c_str());
     if (asPointer)
         builder->append("*");
-    builder->appendFormat(" %s %s", name.c_str(), id.c_str());
+    builder->appendFormat("%s", id.c_str());
 }
 
 void EBPFStructType::emitInitializer(CodeBuilder* builder) {
     builder->blockStart();
-    if (type->is<IR::Type_Struct>() || type->is<IR::Type_HeaderUnion>()) {
-        for (auto f : fields) {
-            builder->emitIndent();
-            builder->appendFormat(".%s = ", f->field->name.name);
-            f->type->emitInitializer(builder);
-            builder->append(",");
-            builder->newline();
-        }
-    } else if (type->is<IR::Type_Header>()) {
-        builder->emitIndent();
-        builder->appendLine(".ebpf_valid = 0");
+    if (type->is<IR::Type>()) {
+        builder->appendFormat("u8 %s_valid = false", name);
+        builder->endOfStatement(true);
     } else {
         BUG("Unexpected type %1%", type);
     }
@@ -212,14 +207,6 @@ void EBPFStructType::emit(CodeBuilder* builder) {
         builder->newline();
     }
 
-    if (type->is<IR::Type_Header>()) {
-        builder->emitIndent();
-        auto type = EBPFTypeFactory::instance->create(IR::Type_Boolean::get());
-        if (type != nullptr) {
-            type->declare(builder, "ebpf_valid", false);
-            builder->endOfStatement(true);
-        }
-    }
 
     builder->blockEnd(false);
     builder->endOfStatement(true);

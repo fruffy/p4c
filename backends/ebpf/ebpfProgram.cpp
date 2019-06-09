@@ -83,9 +83,13 @@ void EBPFProgram::emitC(CodeBuilder* builder, cstring header) {
     builder->blockStart();
 
     emitHeaderInstances(builder);
-    builder->append(" = ");
-    parser->headerType->emitInitializer(builder);
     builder->endOfStatement(true);
+    builder->appendFormat("memset(&%s, 0, sizeof(%s))\n",
+        parser->headers->name.name, parser->headers->name.name);
+    builder->endOfStatement(true);
+
+    declareTypes(builder);
+    builder->newline();
 
     emitLocalVariables(builder);
     builder->newline();
@@ -164,6 +168,20 @@ void EBPFProgram::emitTypes(CodeBuilder* builder) {
     }
 }
 
+void EBPFProgram::declareTypes(CodeBuilder* builder) {
+    for (auto d : program->objects) {
+        if (d->is<IR::Type_Header>()) {
+            auto ht = d->to<IR::Type_Header>();
+            if (d == nullptr)
+                continue;
+            builder->emitIndent();
+            builder->appendFormat("bool %s_valid = false", ht->name.name);
+            builder->endOfStatement(true);
+        }
+    }
+}
+
+
 namespace {
 class ErrorCodesVisitor : public Inspector {
     CodeBuilder* builder;
@@ -191,7 +209,7 @@ void EBPFProgram::emitPreamble(CodeBuilder* builder) {
     builder->endOfStatement(true);
     builder->newline();
     builder->appendLine("#define EBPF_MASK(t, w) ((((t)(1)) << (w)) - (t)1)");
-    builder->appendLine("#define BYTES(w) ((w) / 8)");
+    builder->appendLine("#define BYTES(w) ((w + 7) / 8)");
     builder->appendLine(
         "#define write_partial(a, s, v) do "
         "{ u8 mask = EBPF_MASK(u8, s); "

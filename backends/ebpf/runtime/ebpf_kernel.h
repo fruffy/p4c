@@ -347,6 +347,8 @@ struct bpf_elf_map SEC("maps") NAME = {          \
     bpf_map_lookup_elem(&table, key)
 #define BPF_MAP_UPDATE_ELEM(table, key, value, flags) \
     bpf_map_update_elem(&table, key, value, flags)
+#define BPF_SKB_LOAD_BYTES(ctx, off, to, len)  \
+    bpf_skb_load_bytes(ctx, off, to, len)
 
 #endif // END EBPF KERNEL DEFINITIONS
 

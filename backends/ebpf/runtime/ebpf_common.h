@@ -21,6 +21,7 @@ limitations under the License.
 
 #include <stdio.h>          // printf
 #include <stdbool.h>        // true and false
+#include <string.h>         // memset()
 #include <linux/types.h>    // u8, u16, u32, u64
 
 typedef signed char s8;

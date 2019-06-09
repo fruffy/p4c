@@ -86,17 +86,16 @@ bool ControlBodyTranslator::preorder(const IR::MethodCallExpression* expression)
     auto bim = mi->to<P4::BuiltInMethod>();
     if (bim != nullptr) {
         builder->emitIndent();
+        auto type = typeMap->getType(bim->appliedTo);
+        auto ht = type->to<IR::Type_Header>();
         if (bim->name == IR::Type_Header::isValid) {
-            visit(bim->appliedTo);
-            builder->append(".ebpf_valid");
+            builder->appendFormat("%s_valid", ht->name.name);
             return false;
         } else if (bim->name == IR::Type_Header::setValid) {
-            visit(bim->appliedTo);
-            builder->append(".ebpf_valid = true");
+            builder->appendFormat("%s_valid = true", ht->name.name);
             return false;
         } else if (bim->name == IR::Type_Header::setInvalid) {
-            visit(bim->appliedTo);
-            builder->append(".ebpf_valid = false");
+            builder->appendFormat("%s_valid = false", ht->name.name);
             return false;
         }
     }
@@ -195,7 +194,7 @@ void ControlBodyTranslator::compileEmit(const IR::Vector<IR::Argument>* args) {
     builder->emitIndent();
     builder->append("if (");
     visit(expr);
-    builder->append(".ebpf_valid) ");
+    builder->appendFormat("%s_valid)", ht->name.name);
     builder->blockStart();
 
     unsigned width = ht->width_bits();
