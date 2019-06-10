@@ -52,8 +52,14 @@ def _generate_control_actions(cmds):
             tbl_name = cmd.table
             for key_num, key_field in enumerate(cmd.match):
                 field = key_field[0].split('.')[1]
-                generated += ("%s.%s = %s;\n\t"
-                              % (key_name, field, key_field[1]))
+                key_bytes = bytearray.fromhex(key_field[1].replace("0x", ""))
+                key_tmp_name = "key%d_%d" % (index, key_num)
+                generated += "u8 %s[] = {" % key_tmp_name
+                for key_byte in key_bytes:
+                    generated += "0x%02x," % key_byte
+                generated += "};\n\t"
+                generated += ("memcpy(&%s.%s,&%s,sizeof(%s));\n\t"
+                              % (key_name, field, key_tmp_name, key_tmp_name))
         generated += ("tableFileDescriptor = "
                       "BPF_OBJ_GET(MAP_PATH \"/%s\");\n\t" %
                       tbl_name)

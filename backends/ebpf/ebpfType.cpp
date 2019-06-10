@@ -127,8 +127,10 @@ EBPFScalarType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
     } else {
         if (asPointer)
             builder->append("u8*");
-        else if(width < 8)
-            builder->appendFormat("u8 %s:%d", id.c_str(), width);
+        else if(width % 8 != 0 && width <= 64) {
+            unsigned int_size = 8 * ((width +7) / 8);
+            builder->appendFormat("u%d %s:%d", int_size, id.c_str(), width);
+        }
         else
             builder->appendFormat("u8 %s[%d]", id.c_str(), bytesRequired());
     }
