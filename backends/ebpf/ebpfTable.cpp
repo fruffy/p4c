@@ -57,6 +57,17 @@ class ActionTranslationVisitor : public CodeGenInspector {
     bool preorder(const IR::P4Action* act) {
         action = act;
         visit(action->body);
+        for (auto c :action->body->components) {
+            cstring dot = ".";
+            cstring arrow = "->";
+            cstring input = c->toString().replace(dot, arrow);
+            printf("%s\n", input);
+            builder->appendFormat("%s", input);
+        }
+/*        cstring dot = ".";
+        cstring arrow = "->";
+        cstring input = action->body->expression->toString().replace(dot, arrow);
+        builder->appendFormat("%s", input);*/
         return false;
     }
 };  // ActionTranslationVisitor
@@ -285,11 +296,17 @@ void EBPFTable::emitKey(CodeBuilder* builder, cstring keyName) {
         builder->emitIndent();
         if (memcpy) {
             builder->appendFormat("memcpy(&%s.%s, &", keyName.c_str(), fieldName.c_str());
-            codeGen->visit(c->expression);
+            cstring dot = ".";
+            cstring arrow = "->";
+            cstring input = c->expression->toString().replace(dot, arrow);
+            builder->appendFormat("%s", input);
             builder->appendFormat(", %d)", scalar->bytesRequired());
         } else {
             builder->appendFormat("%s.%s = ", keyName.c_str(), fieldName.c_str());
-            codeGen->visit(c->expression);
+            cstring dot = ".";
+            cstring arrow = "->";
+            cstring input = c->expression->toString().replace(dot, arrow);
+            builder->appendFormat("%s", input);
         }
         builder->endOfStatement(true);
     }

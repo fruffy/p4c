@@ -20,6 +20,7 @@ limitations under the License.
 #include "frontends/p4/coreLibrary.h"
 #include "frontends/p4/methodInstance.h"
 
+
 namespace EBPF {
 
 namespace {
@@ -129,7 +130,12 @@ bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
     }
     builder->emitIndent();
     builder->append("switch (htons(");
-    visit(expression->select);
+    for (auto c : expression->select->components) {
+        cstring dot = ".";
+        cstring arrow = "->";
+        cstring input = c->toString().replace(dot, arrow);
+        builder->appendFormat("%s", input);
+    }
     builder->append(")) ");
     builder->blockStart();
 
@@ -281,7 +287,14 @@ StateTranslationVisitor::compileExtract(const IR::Expression* destination) {
     builder->blockEnd(true);
 
     builder->emitIndent();
-    builder->appendFormat("if (BPF_SKB_LOAD_BYTES(skb, BYTES(%s),&", program->offsetVar.c_str());
+    //builder->appendFormat("%s", ht->name.name);
+    cstring dot = ".";
+    cstring arrow = "->";
+    cstring input = destination->toString().replace(dot, arrow);
+    builder->appendFormat("%s", input);
+    builder->appendFormat(" = ebpf_packetStart + BYTES(%s)", program->offsetVar.c_str());
+    builder->endOfStatement(true);
+/*    builder->appendFormat("if (BPF_SKB_LOAD_BYTES(skb, BYTES(%s),&", program->offsetVar.c_str());
     visit(destination);
     builder->append(", sizeof(");
     visit(destination);
@@ -290,9 +303,10 @@ StateTranslationVisitor::compileExtract(const IR::Expression* destination) {
     builder->append(IR::ParserState::reject);
     builder->append(";");
     builder->append("}");
+*/
     builder->emitIndent();
     builder->appendFormat("%s += sizeof(", program->offsetVar.c_str());
-    visit(destination);
+    builder->appendFormat("%s", ht->name.name);
     builder->append(") * 8");
     builder->endOfStatement(true);
     builder->newline();
