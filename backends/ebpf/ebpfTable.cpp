@@ -64,10 +64,19 @@ class ActionTranslationVisitor : public CodeGenInspector {
             cstring dot = ".";
             cstring arrow = "->";
             cstring input = assign->left->toString().replace(dot, arrow);
+            input = input.replace("headers->", "headers.");
             builder->emitIndent();
-            builder->appendFormat("%s", input);
-            builder->appendFormat(" = ", input);
-            visit(assign->right);
+            if(assign->right->type->is<IR::Type_Boolean>()) {
+                builder->appendFormat("%s", input);
+                builder->append( "= ");
+                visit(assign->right);
+            }
+            else {
+                builder->appendFormat("memcpy(&%s", input);
+                builder->append(",&");
+                visit(assign->right);
+                builder->appendFormat(",BYTES(%d))", assign->left->type->width_bits());
+            }
             builder->endOfStatement(true);
         }
         builder->blockEnd(false);
@@ -302,6 +311,7 @@ void EBPFTable::emitKey(CodeBuilder* builder, cstring keyName) {
             cstring dot = ".";
             cstring arrow = "->";
             cstring input = c->expression->toString().replace(dot, arrow);
+            input = input.replace("headers->", "headers.");
             builder->appendFormat("%s", input);
             builder->appendFormat(", %d)", scalar->bytesRequired());
         } else {
@@ -309,6 +319,8 @@ void EBPFTable::emitKey(CodeBuilder* builder, cstring keyName) {
             cstring dot = ".";
             cstring arrow = "->";
             cstring input = c->expression->toString().replace(dot, arrow);
+            input = input.replace("headers->", "headers.");
+
             builder->appendFormat("%s", input);
         }
         builder->endOfStatement(true);
@@ -547,7 +559,12 @@ void EBPFCounterTable::emitCounterIncrement(CodeBuilder* builder,
     BUG_CHECK(expression->arguments->size() == 1, "Expected just 1 argument for %1%", expression);
     auto arg = expression->arguments->at(0);
 
-    codeGen->visit(arg);
+    //codeGen->visit(arg);
+    cstring dot = ".";
+    cstring arrow = "->";
+    cstring input = arg->toString().replace(dot, arrow);
+    input = input.replace("headers->", "headers.");
+    builder->appendFormat("%s", input);
     builder->endOfStatement(true);
 
     builder->emitIndent();

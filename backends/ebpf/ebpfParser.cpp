@@ -157,6 +157,7 @@ bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
                 cstring dot = ".";
                 cstring arrow = "->";
                 cstring input = c->toString().replace(dot, arrow);
+                input = input.replace("headers->", "headers.");
                 builder->appendFormat("%s, ", input);
                 builder->append("branch_key, ");
                 builder->appendFormat("%d", memcmp_size);

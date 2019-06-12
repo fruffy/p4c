@@ -247,7 +247,11 @@ bool CodeGenInspector::preorder(const IR::AssignmentStatement* a) {
         builder->append("memcpy(&");
         visit(a->left);
         builder->append(", &");
-        visit(a->right);
+        cstring dot = ".";
+        cstring arrow = "->";
+        cstring input = a->right->toString().replace(dot, arrow);
+        input = input.replace("headers->", "headers.");
+        builder->appendFormat("%s", input);
         builder->appendFormat(", %d)", scalar->bytesRequired());
     } else {
         visit(a->left);
