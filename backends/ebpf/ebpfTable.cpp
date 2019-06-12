@@ -53,21 +53,24 @@ class ActionTranslationVisitor : public CodeGenInspector {
         visit(expression->path);
         return false;
     }
-
     bool preorder(const IR::P4Action* act) {
+
+        builder->blockStart();
         action = act;
-        visit(action->body);
         for (auto c :action->body->components) {
+            if (!c->is<IR::AssignmentStatement>())
+                continue;
+            auto assign = c->to<IR::AssignmentStatement>();
             cstring dot = ".";
             cstring arrow = "->";
-            cstring input = c->toString().replace(dot, arrow);
-            printf("%s\n", input);
+            cstring input = assign->left->toString().replace(dot, arrow);
+            builder->emitIndent();
             builder->appendFormat("%s", input);
+            builder->appendFormat(" = ", input);
+            visit(assign->right);
+            builder->endOfStatement(true);
         }
-/*        cstring dot = ".";
-        cstring arrow = "->";
-        cstring input = action->body->expression->toString().replace(dot, arrow);
-        builder->appendFormat("%s", input);*/
+        builder->blockEnd(false);
         return false;
     }
 };  // ActionTranslationVisitor

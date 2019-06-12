@@ -128,27 +128,45 @@ bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
         ::error("%1%: only supporting a single argument for select", expression->select);
         return false;
     }
-    builder->emitIndent();
-    builder->append("switch (htons(");
-    for (auto c : expression->select->components) {
-        cstring dot = ".";
-        cstring arrow = "->";
-        cstring input = c->toString().replace(dot, arrow);
-        builder->appendFormat("%s", input);
+    for (auto e : expression->selectCases) {
+        builder->emitIndent();
+        if (e->keyset->is<IR::DefaultExpression>()) {
+            hasDefault = true;
+            builder->append("else");
+        } else {
+            auto key_type = EBPFTypeFactory::instance->create(e->keyset->type);
+            builder->append("u8 *branch_key = (u8 *)");
+            visit(e->keyset);
+            builder->endOfStatement(true);
+            builder->emitIndent();
+            builder->append("if(");
+            for (auto c : expression->select->components) {
+                builder->append("memcmp(");
+                cstring dot = ".";
+                cstring arrow = "->";
+                cstring input = c->toString().replace(dot, arrow);
+                builder->appendFormat("%s, ", input);
+                builder->append("branch_key, ");
+                builder->appendFormat("BYTES(%d)", c->type->width_bits());
+            }
+            builder->append("))");
+        }
+        builder->newline();
+        builder->emitIndent();
+        builder->emitIndent();
+        builder->append("goto ");
+        visit(e->state);
+        builder->endOfStatement(true);
     }
-    builder->append(")) ");
-    builder->blockStart();
-
-    for (auto e : expression->selectCases)
-        visit(e);
 
     if (!hasDefault) {
         builder->emitIndent();
-        builder->appendFormat("default: goto %s;", IR::ParserState::reject.c_str());
+        builder->appendFormat("else", IR::ParserState::reject.c_str());
+        builder->newline();
+        builder->appendFormat("goto %s;", IR::ParserState::reject.c_str());
         builder->newline();
     }
 
-    builder->blockEnd(true);
     return false;
 }
 
@@ -288,26 +306,13 @@ StateTranslationVisitor::compileExtract(const IR::Expression* destination) {
 
     builder->emitIndent();
     //builder->appendFormat("%s", ht->name.name);
-    cstring dot = ".";
-    cstring arrow = "->";
-    cstring input = destination->toString().replace(dot, arrow);
-    builder->appendFormat("%s", input);
+    visit(destination);
     builder->appendFormat(" = ebpf_packetStart + BYTES(%s)", program->offsetVar.c_str());
     builder->endOfStatement(true);
-/*    builder->appendFormat("if (BPF_SKB_LOAD_BYTES(skb, BYTES(%s),&", program->offsetVar.c_str());
-    visit(destination);
-    builder->append(", sizeof(");
-    visit(destination);
-    builder->append(")) < 0) {");
-    builder->append("goto ");
-    builder->append(IR::ParserState::reject);
-    builder->append(";");
-    builder->append("}");
-*/
+
     builder->emitIndent();
-    builder->appendFormat("%s += sizeof(", program->offsetVar.c_str());
-    builder->appendFormat("%s", ht->name.name);
-    builder->append(") * 8");
+    builder->appendFormat("%s += ", program->offsetVar.c_str());
+    builder->appendFormat("%d", width);
     builder->endOfStatement(true);
     builder->newline();
 

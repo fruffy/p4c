@@ -120,11 +120,15 @@ void
 EBPFScalarType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
     if (EBPFScalarType::generatesScalar(width)) {
         emit(builder);
+        if (asPointer)
+            builder->append("*");
         builder->spc();
         builder->append(id);
     } else {
-        if(width % 8 != 0 && width <= 64) {
-            unsigned int_size = 8 * ((width +7) / 8);
+        if (asPointer)
+            builder->appendFormat("u8 *%s", id.c_str());
+        else if(width % 8 != 0 && width <= 64) {
+            unsigned int_size = 8 * ((width + 7) / 8);
             builder->appendFormat("u%d %s:%d", int_size, id.c_str(), width);
         }
         else
@@ -190,12 +194,15 @@ void EBPFStructType::emit(CodeBuilder* builder) {
     builder->blockStart();
 
     for (auto f : fields) {
-        auto type = f->type;
+        auto f_type = f->type;
         builder->emitIndent();
-        type->declare(builder, f->field->name, true);
+        if (type->is<IR::Type_Struct>() || type->is<IR::Type_HeaderUnion>())
+            f_type->declare(builder, f->field->name, true);
+        else
+            f_type->declare(builder, f->field->name, false);
         builder->append("; ");
         builder->append("/* ");
-        builder->append(type->type->toString());
+        builder->append(f_type->type->toString());
         if (f->comment != nullptr) {
             builder->append(" ");
             builder->append(f->comment);

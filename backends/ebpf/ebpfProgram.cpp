@@ -178,6 +178,7 @@ void EBPFProgram::declareTypes(CodeBuilder* builder) {
             builder->emitIndent();
             h_type->declare(builder, ht->name.name, true);
             builder->endOfStatement(true);
+            builder->emitIndent();
             builder->appendFormat("bool %s_valid = false", ht->name.name);
             builder->endOfStatement(true);
         }
@@ -263,7 +264,7 @@ void EBPFProgram::emitLocalVariables(CodeBuilder* builder) {
 
 void EBPFProgram::emitHeaderInstances(CodeBuilder* builder) {
     builder->emitIndent();
-    parser->headerType->declare(builder, parser->headers->name.name, true);
+    parser->headerType->declare(builder, parser->headers->name.name, false);
 }
 
 void EBPFProgram::emitPipeline(CodeBuilder* builder) {
