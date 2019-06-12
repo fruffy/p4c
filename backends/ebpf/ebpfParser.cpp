@@ -134,9 +134,21 @@ bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
             hasDefault = true;
             builder->append("else");
         } else {
-            auto key_type = EBPFTypeFactory::instance->create(e->keyset->type);
-            builder->append("u8 *branch_key = (u8 *)");
-            visit(e->keyset);
+            builder->append("u8 branch_key[] = {");
+            cstring input = e->keyset->toString();
+            int memcmp_size = (e->keyset->type->width_bits() + 7) / 8;
+            if (strlen(input) % 2 != 0)
+                input = input.replace("0x", "0");
+            else
+                input = input.replace("0x", "");
+            const char *pos = input.c_str();
+            unsigned char val;
+            for (int count = 0; count < memcmp_size; count++) {
+                sscanf(pos, "%2hhx", &val);
+                builder->appendFormat("0x%02x,", val);
+                pos += 2;
+            }
+            builder->append("}");
             builder->endOfStatement(true);
             builder->emitIndent();
             builder->append("if(");
@@ -147,9 +159,10 @@ bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
                 cstring input = c->toString().replace(dot, arrow);
                 builder->appendFormat("%s, ", input);
                 builder->append("branch_key, ");
-                builder->appendFormat("BYTES(%d)", c->type->width_bits());
+                builder->appendFormat("%d", memcmp_size);
+                builder->append(") == 0");
             }
-            builder->append("))");
+            builder->append(")");
         }
         builder->newline();
         builder->emitIndent();
