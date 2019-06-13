@@ -154,12 +154,8 @@ bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
             builder->append("if(");
             for (auto c : expression->select->components) {
                 builder->append("memcmp(");
-                cstring dot = ".";
-                cstring arrow = "->";
-                cstring input = c->toString().replace(dot, arrow);
-                input = input.replace("headers->", "headers.");
-                builder->appendFormat("%s, ", input);
-                builder->append("branch_key, ");
+                visit(c);
+                builder->append(", branch_key, ");
                 builder->appendFormat("%d", memcmp_size);
                 builder->append(") == 0");
             }
@@ -320,9 +316,18 @@ StateTranslationVisitor::compileExtract(const IR::Expression* destination) {
 
     builder->emitIndent();
     //builder->appendFormat("%s", ht->name.name);
-    visit(destination);
+/*    visit(destination);
     builder->appendFormat(" = ebpf_packetStart + BYTES(%s)", program->offsetVar.c_str());
-    builder->endOfStatement(true);
+    builder->endOfStatement(true);*/
+
+    builder->emitIndent();
+    builder->appendFormat("if (BPF_SKB_LOAD_BYTES(skb, BYTES(%s),&", program->offsetVar.c_str());
+    visit(destination);
+    builder->appendFormat(", BYTES(%d", width);
+    builder->append(")) < 0) { goto ");
+    builder->append(IR::ParserState::reject);
+    builder->append(";}");
+
 
     builder->emitIndent();
     builder->appendFormat("%s += ", program->offsetVar.c_str());

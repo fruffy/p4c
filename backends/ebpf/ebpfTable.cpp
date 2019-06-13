@@ -54,32 +54,8 @@ class ActionTranslationVisitor : public CodeGenInspector {
         return false;
     }
     bool preorder(const IR::P4Action* act) {
-
-        builder->blockStart();
         action = act;
-        for (auto c :action->body->components) {
-            if (!c->is<IR::AssignmentStatement>())
-                continue;
-            auto assign = c->to<IR::AssignmentStatement>();
-            cstring dot = ".";
-            cstring arrow = "->";
-            cstring input = assign->left->toString().replace(dot, arrow);
-            input = input.replace("headers->", "headers.");
-            builder->emitIndent();
-            if(assign->right->type->is<IR::Type_Boolean>()) {
-                builder->appendFormat("%s", input);
-                builder->append( "= ");
-                visit(assign->right);
-            }
-            else {
-                builder->appendFormat("memcpy(&%s", input);
-                builder->append(",&");
-                visit(assign->right);
-                builder->appendFormat(",BYTES(%d))", assign->left->type->width_bits());
-            }
-            builder->endOfStatement(true);
-        }
-        builder->blockEnd(false);
+        visit(action->body);
         return false;
     }
 };  // ActionTranslationVisitor
@@ -308,20 +284,11 @@ void EBPFTable::emitKey(CodeBuilder* builder, cstring keyName) {
         builder->emitIndent();
         if (memcpy) {
             builder->appendFormat("memcpy(&%s.%s, &", keyName.c_str(), fieldName.c_str());
-            cstring dot = ".";
-            cstring arrow = "->";
-            cstring input = c->expression->toString().replace(dot, arrow);
-            input = input.replace("headers->", "headers.");
-            builder->appendFormat("%s", input);
+            codeGen->visit(c->expression);
             builder->appendFormat(", %d)", scalar->bytesRequired());
         } else {
             builder->appendFormat("%s.%s = ", keyName.c_str(), fieldName.c_str());
-            cstring dot = ".";
-            cstring arrow = "->";
-            cstring input = c->expression->toString().replace(dot, arrow);
-            input = input.replace("headers->", "headers.");
-
-            builder->appendFormat("%s", input);
+            codeGen->visit(c->expression);
         }
         builder->endOfStatement(true);
     }
@@ -554,17 +521,16 @@ void EBPFCounterTable::emitCounterIncrement(CodeBuilder* builder,
     builder->append(keyTypeName);
     builder->spc();
     builder->append(keyName);
-    builder->append(" = ");
+    builder->endOfStatement(true);
+    builder->append("memcpy(&");
+    builder->append(keyName);
+    builder->append(",");
 
     BUG_CHECK(expression->arguments->size() == 1, "Expected just 1 argument for %1%", expression);
     auto arg = expression->arguments->at(0);
 
-    //codeGen->visit(arg);
-    cstring dot = ".";
-    cstring arrow = "->";
-    cstring input = arg->toString().replace(dot, arrow);
-    input = input.replace("headers->", "headers.");
-    builder->appendFormat("%s", input);
+    codeGen->visit(arg);
+    builder->appendFormat(",BYTES(%d))", arg->expression->type->width_bits());
     builder->endOfStatement(true);
 
     builder->emitIndent();

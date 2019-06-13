@@ -197,7 +197,7 @@ void EBPFStructType::emit(CodeBuilder* builder) {
         auto f_type = f->type;
         builder->emitIndent();
         if (type->is<IR::Type_Struct>() || type->is<IR::Type_HeaderUnion>())
-            f_type->declare(builder, f->field->name, true);
+            f_type->declare(builder, f->field->name, false);
         else
             f_type->declare(builder, f->field->name, false);
         builder->append("; ");

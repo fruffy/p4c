@@ -116,10 +116,10 @@ void ControlBodyTranslator::compileEmitField(const IR::Expression* expr, cstring
                                              unsigned alignment, EBPFType* type) {
     unsigned widthToEmit = dynamic_cast<IHasWidth*>(type)->widthInBits();
     cstring swap = "";
-    if (widthToEmit == 16)
-        swap = "htons";
-    else if (widthToEmit == 32)
-        swap = "htonl";
+    //if (widthToEmit == 16)
+    //    swap = "htons";
+    //else if (widthToEmit == 32)
+    //    swap = "htonl";
     if (!swap.isNullOrEmpty()) {
         builder->emitIndent();
         visit(expr);
@@ -137,17 +137,22 @@ void ControlBodyTranslator::compileEmitField(const IR::Expression* expr, cstring
 
     for (unsigned i=0; i < (widthToEmit + 7) / 8; i++) {
         builder->emitIndent();
-        builder->appendFormat("%s = ((char*)(&", program->byteVar.c_str());
-        visit(expr);
-        builder->appendFormat(".%s))[%d]", field.c_str(), i);
-        builder->endOfStatement(true);
 
         unsigned freeBits = alignment == 0 ? (8 - alignment) : 8;
         unsigned bitsToWrite = bitsInCurrentByte > freeBits ? freeBits : bitsInCurrentByte;
 
+        builder->appendFormat("%s = ((u8)(", program->byteVar.c_str());
+        if (bitsToWrite == 8)
+            builder->append("&");
+
+        visit(expr);
+        builder->appendFormat(".%s))", field.c_str(), i);
+        builder->endOfStatement(true);
+
+
         BUG_CHECK((bitsToWrite > 0) && (bitsToWrite <= 8), "invalid bitsToWrite %d", bitsToWrite);
         builder->emitIndent();
-        if (alignment == 0)
+        if (bitsToWrite == 8)
             builder->appendFormat("write_byte(%s, BYTES(%s) + %d, (%s) << %d)",
                                   program->packetStartVar.c_str(), program->offsetVar.c_str(), i,
                                   program->byteVar.c_str(), 8 - bitsToWrite);
@@ -193,7 +198,7 @@ void ControlBodyTranslator::compileEmit(const IR::Vector<IR::Argument>* args) {
     auto program = control->program;
     builder->emitIndent();
     builder->append("if (");
-    visit(expr);
+    //visit(expr);
     builder->appendFormat("%s_valid)", ht->name.name);
     builder->blockStart();
 
@@ -361,12 +366,14 @@ bool ControlBodyTranslator::preorder(const IR::IfStatement* statement) {
     }
 
     // This is almost the same as the base class method
-    builder->append("if (");
-    if (isHit)
-        builder->append(control->hitVariable);
+    if (isHit) {
+            builder->append("if (");
+            builder->append(control->hitVariable);
+            builder->append(") ");
+        }
     else
         visit(statement->condition);
-    builder->append(") ");
+
     if (!statement->ifTrue->is<IR::BlockStatement>()) {
         builder->increaseIndent();
         builder->newline();
