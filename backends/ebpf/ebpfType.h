@@ -33,7 +33,7 @@ class EBPFType : public EBPFObject {
     virtual void emit(CodeBuilder* builder) = 0;
     virtual void declare(CodeBuilder* builder, cstring id, bool asPointer) = 0;
     virtual void emitInitializer(CodeBuilder* builder) = 0;
-    virtual void declareArray(CodeBuilder* /*builder*/, cstring /*id*/, unsigned /*size*/)
+    virtual void declareArray(CodeBuilder* /*builder*/, cstring /*id*/, unsigned /*size*/, bool /* asPointer */)
     { BUG("%1%: unsupported array", type); }
     template<typename T> bool is() const { return dynamic_cast<const T*>(this) != nullptr; }
     template<typename T> T *to() { return dynamic_cast<T*>(this); }
@@ -65,10 +65,10 @@ class EBPFBoolType : public EBPFType, public IHasWidth {
  public:
     EBPFBoolType() : EBPFType(IR::Type_Boolean::get()) {}
     void emit(CodeBuilder* builder) override
-    { builder->append("u8"); }
+    { builder->append("bool"); }
     void declare(CodeBuilder* builder, cstring id, bool asPointer) override;
     void emitInitializer(CodeBuilder* builder) override
-    { builder->append("0"); }
+    { builder->append("false"); }
     unsigned widthInBits() override { return 1; }
     unsigned implementationWidthInBits() override { return 8; }
 };
@@ -99,14 +99,12 @@ class EBPFScalarType : public EBPFType, public IHasWidth {
     unsigned alignment() const;
     void emit(CodeBuilder* builder) override;
     void declare(CodeBuilder* builder, cstring id, bool asPointer) override;
-    void emitInitializer(CodeBuilder* builder) override
-    { builder->append("0"); }
+    void emitInitializer(CodeBuilder* builder) override;
     unsigned widthInBits() override { return width; }
     unsigned implementationWidthInBits() override { return bytesRequired() * 8; }
     // True if this width is small enough to store in a machine scalar
     static bool generatesScalar(unsigned width)
-    //{ return width == 8 || width == 16 || width == 32 || width == 64; }
-    { width = 0; return false; }
+    { return width == 8 || width == 16 || width == 32 || width == 64; }
 };
 
 // This should not always implement IHasWidth, but it may...
@@ -121,10 +119,9 @@ class EBPFTypeName : public EBPFType, public IHasWidth {
     void emitInitializer(CodeBuilder* builder) override;
     unsigned widthInBits() override;
     unsigned implementationWidthInBits() override;
-    void declareArray(CodeBuilder* builder, cstring id, unsigned size) override;
+    void declareArray(CodeBuilder* builder, cstring id, unsigned size, bool asPointer) override;
 };
 
-// Also represents headers and unions
 class EBPFStructType : public EBPFType, public IHasWidth {
     class EBPFField {
      public:
@@ -137,8 +134,8 @@ class EBPFStructType : public EBPFType, public IHasWidth {
     };
 
  public:
-    cstring  kind;
-    cstring  name;
+    cstring kind;
+    cstring name;
     std::vector<EBPFField*>  fields;
     unsigned width;
     unsigned implWidth;
@@ -149,8 +146,22 @@ class EBPFStructType : public EBPFType, public IHasWidth {
     unsigned widthInBits() override { return width; }
     unsigned implementationWidthInBits() override { return implWidth; }
     void emit(CodeBuilder* builder) override;
-    void declareArray(CodeBuilder* builder, cstring id, unsigned size) override;
+    void declareArray(CodeBuilder* builder, cstring id, unsigned size, bool asPointer) override;
 };
+
+class EBPFHeaderType : public EBPFStructType {
+
+ public:
+    explicit EBPFHeaderType(const IR::Type_Header* strct) : EBPFStructType(strct) {};
+};
+
+class EBPFHeaderUnionType : public EBPFStructType{
+
+ public:
+    explicit EBPFHeaderUnionType(const IR::Type_HeaderUnion* strct): EBPFStructType(strct) {};
+};
+
+
 
 class EBPFEnumType : public EBPFType, public EBPF::IHasWidth {
  public:

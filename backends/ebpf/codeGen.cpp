@@ -66,27 +66,10 @@ bool CodeGenInspector::comparison(const IR::Operation_Relation* b) {
     bool scalar = (et->is<EBPFScalarType>() &&
                    EBPFScalarType::generatesScalar(et->to<EBPFScalarType>()->widthInBits()))
                   || et->is<EBPFBoolType>();
-    builder->emitIndent();
-    builder->append("u8 cmp[] = {");
-    cstring input = b->right->toString();
-    int memcmp_size = (b->right->type->width_bits() + 7) / 8;
-    if (strlen(input) % 2 != 0)
-      input = input.replace("0x", "0");
-    else
-      input = input.replace("0x", "");
-    const char *pos = input.c_str();
-    unsigned char val;
-    for (int count = 0; count < memcmp_size; count++) {
-      sscanf(pos, "%2hhx", &val);
-      builder->appendFormat("0x%02x,", val);
-      pos += 2;
-    }
-    builder->append("}");
-    builder->endOfStatement(true);
-    builder->emitIndent();
-    builder->append("if (");
-    if (scalar) {
-        builder->append("(");
+
+
+    if (false) {
+        builder->append("if (");
         visit(b->left);
         builder->spc();
         builder->append(b->getStringOp());
@@ -94,15 +77,46 @@ bool CodeGenInspector::comparison(const IR::Operation_Relation* b) {
         visit(b->right);
         builder->append(")");
     } else {
+        builder->append("{u8 cmp[] = {");
+        cstring input = b->right->toString();
+        int memcmp_size = (b->right->type->width_bits() + 7) / 8;
+        if (strlen(input) % 2 != 0)
+          input = input.replace("0x", "0");
+        else
+          input = input.replace("0x", "");
+        const char *pos = input.c_str();
+        unsigned char val;
+        for (int count = 0; count < memcmp_size; count++) {
+          sscanf(pos, "%2hhx", &val);
+          builder->appendFormat("0x%02x,", val);
+          pos += 2;
+        }
+        builder->append("}");
+        builder->endOfStatement(true);
+
+        builder->emitIndent();
         if (!et->is<IHasWidth>())
             BUG("%1%: Comparisons for type %2% not yet implemented", type);
-        unsigned width = et->to<IHasWidth>()->implementationWidthInBits();
-        builder->append("memcmp(&");
-        visit(b->left);
+        if (b->left->is<IR::Operation_Binary>()) {
+            builder->append("u8 bit_cmp = ");
+            visit(b->left);
+            builder->endOfStatement(true);
+            builder->append("if (");
+            builder->append("memcmp(");
+            builder->append("&bit_cmp");
+        }
+        else {
+            builder->append("if (");
+            builder->append("memcmp(");
+            visit(b->left);
+        }
         builder->append(", cmp");
-        builder->appendFormat(", %d) == 0", memcmp_size);
+        builder->appendFormat(", %d) ", memcmp_size);
+        builder->append(b->getStringOp());
+        builder->append(" 0)");
+        builder->appendLine("}");
+
     }
-    builder->append(")");
     return false;
 }
 
@@ -157,7 +171,7 @@ bool CodeGenInspector::preorder(const IR::Member* expression) {
         if (type->is<IR::Type_Struct>() || type->is<IR::Type_HeaderUnion>())
             builder->append(".");
         else
-            builder->append(".");
+            builder->append("->");
     }
     builder->append(expression->member);
     return false;
@@ -256,45 +270,84 @@ bool CodeGenInspector::preorder(const IR::Type_Enum* type) {
 
 bool CodeGenInspector::preorder(const IR::AssignmentStatement* a) {
     auto ltype = typeMap->getType(a->left);
-    auto ebpfType = EBPFTypeFactory::instance->create(ltype);
-    bool memcpy = false;
+    auto rtype = typeMap->getType(a->right);
+    auto lebpfType = EBPFTypeFactory::instance->create(ltype);
+    auto rebpfType = EBPFTypeFactory::instance->create(rtype);
     EBPFScalarType* scalar = nullptr;
-    unsigned width = 0;
-    if (ebpfType->is<EBPFScalarType>()) {
-        scalar = ebpfType->to<EBPFScalarType>();
-        width = scalar->implementationWidthInBits();
-        memcpy = !EBPFScalarType::generatesScalar(width);
-    }
-    if (memcpy) {
-        builder->append("memcpy(&");
-        visit(a->left);
-        builder->append(", ");
-        if (a->right->type->is<EBPFScalarType>())
-            builder->append("&");
-        visit(a->right);
-        builder->appendFormat(", %d)", scalar->bytesRequired());
+
+    if (a->right->is<IR::MethodCallExpression>()) {
+        auto mc = a->right->to<IR::MethodCallExpression>();
+        auto mi = P4::MethodInstance::resolve(mc, refMap, typeMap);
+        visit(mc->method);
+        bool first = true;
+        builder->append("(");
+        for (auto p : *mi->substitution.getParametersInArgumentOrder()) {
+            if (first) {
+                builder->append("(u8 *) ");
+                visit(a->left);
+                builder->append(", (u8 *) ");
+            }
+            else
+                builder->append(", (u8 *) ");
+            first = false;
+
+            if (p->direction == IR::Direction::Out ||
+                p->direction == IR::Direction::InOut)
+                builder->append("&");
+            auto arg = mi->substitution.lookup(p);
+            visit(arg);
+        }
+        builder->append(")");
+        builder->endOfStatement();
+    } else if (lebpfType->is<EBPFScalarType>()) {
+        scalar = lebpfType->to<EBPFScalarType>();
+        if (a->right->is<IR::Constant>()) {
+            builder->append("{u8 set[] = {");
+            cstring input = a->right->toString();
+            int memcpy_size = (a->right->type->width_bits() + 7) / 8;
+            if (strlen(input) % 2 != 0)
+              input = input.replace("0x", "0");
+            else
+              input = input.replace("0x", "");
+            const char *pos = input.c_str();
+            unsigned char val;
+            for (int count = 0; count < memcpy_size; count++) {
+              sscanf(pos, "%2hhx", &val);
+              builder->appendFormat("0x%02x,", val);
+              pos += 2;
+            }
+            builder->append("}");
+            builder->endOfStatement(true);
+            builder->emitIndent();
+            builder->append("memcpy(");
+            visit(a->left);
+            builder->appendFormat(", set, %d)", scalar->bytesRequired());
+            builder->endOfStatement(false);
+            builder->appendLine("}");
+        } else {
+            builder->append("memcpy(");
+            visit(a->left);
+            builder->append(", ");
+            visit(a->right);
+            builder->appendFormat(", %d)", scalar->bytesRequired());
+            builder->endOfStatement(false);
+        }
     } else {
         visit(a->left);
         builder->append(" = ");
         visit(a->right);
+        builder->endOfStatement();
     }
-    builder->endOfStatement();
     return false;
 }
 
 bool CodeGenInspector::preorder(const IR::BlockStatement* s) {
     builder->blockStart();
-    bool first = true;
     for (auto a : s->components) {
-        if (!first) {
-            builder->newline();
-            builder->emitIndent();
-        }
-        first = false;
+        builder->emitIndent();
         visit(a);
-    }
-    if (!s->components.empty())
         builder->newline();
+    }
     builder->blockEnd(false);
     return false;
 }
@@ -332,14 +385,11 @@ bool CodeGenInspector::preorder(const IR::IfStatement* s) {
         builder->newline();
         builder->emitIndent();
         builder->append("else ");
-        if (!s->ifFalse->is<IR::BlockStatement>()) {
-            builder->increaseIndent();
-            builder->newline();
-            builder->emitIndent();
-        }
+        builder->increaseIndent();
+        builder->newline();
+        builder->emitIndent();
         visit(s->ifFalse);
-        if (!s->ifFalse->is<IR::BlockStatement>())
-            builder->decreaseIndent();
+        builder->decreaseIndent();
     }
     builder->blockEnd(true);
     return false;

@@ -278,19 +278,46 @@ void EBPFTable::emitKey(CodeBuilder* builder, cstring keyName) {
         if (ebpfType->is<EBPFScalarType>()) {
             scalar = ebpfType->to<EBPFScalarType>();
             width = scalar->implementationWidthInBits();
-            memcpy = !EBPFScalarType::generatesScalar(width);
+            memcpy = true; //!EBPFScalarType::generatesScalar(width);
         }
 
-        builder->emitIndent();
         if (memcpy) {
-            builder->appendFormat("memcpy(&%s.%s, &", keyName.c_str(), fieldName.c_str());
-            codeGen->visit(c->expression);
+            builder->emitIndent();
+            builder->append("{ ");
+            builder->append("u8 set[] = {");
+            cstring input = c->expression->toString();
+            int memcpy_size = (c->expression->type->width_bits() + 7) / 8;
+            if (strlen(input) % 2 != 0)
+              input = input.replace("0x", "0");
+            else
+              input = input.replace("0x", "");
+            const char *pos = input.c_str();
+            unsigned char val;
+            for (int count = 0; count < memcpy_size; count++) {
+              sscanf(pos, "%2hhx", &val);
+              builder->appendFormat("0x%02x,", val);
+              pos += 2;
+            }
+            builder->append("}");
+            builder->endOfStatement(true);
+
+            builder->emitIndent();
+            builder->appendFormat("memcpy(%s.%s, ", keyName.c_str(), fieldName.c_str());
+
+/*            if (ebpfType->is<EBPFScalarType>())
+                builder->append("&");*/
+            if (c->expression->type->is<IR::Constant>())
+                builder->append("set");
+            else
+                codeGen->visit(c->expression);
             builder->appendFormat(", %d)", scalar->bytesRequired());
+            builder->endOfStatement(false);
+            builder->appendLine(" }");
         } else {
             builder->appendFormat("%s.%s = ", keyName.c_str(), fieldName.c_str());
             codeGen->visit(c->expression);
+            builder->endOfStatement(true);
         }
-        builder->endOfStatement(true);
     }
 }
 

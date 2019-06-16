@@ -63,8 +63,8 @@ EBPFBoolType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
 
 /////////////////////////////////////////////////////////////
 
-void EBPFStackType::declare(CodeBuilder* builder, cstring id, bool) {
-    elementType->declareArray(builder, id, size);
+void EBPFStackType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
+    elementType->declareArray(builder, id, size, asPointer);
 }
 
 void EBPFStackType::emitInitializer(CodeBuilder* builder) {
@@ -118,23 +118,27 @@ void EBPFScalarType::emit(CodeBuilder* builder) {
 
 void
 EBPFScalarType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
-    if (EBPFScalarType::generatesScalar(width)) {
+    if (asPointer)
+        builder->appendFormat("u8 *%s", id.c_str());
+    else if(width % 8 != 0) {
+        if (width > 64)
+            BUG("Unsupported size %d!", width);
+        unsigned int_size = 8 * ((width + 7) / 8);
         emit(builder);
-        if (asPointer)
-            builder->append("*");
-        builder->spc();
-        builder->append(id);
-    } else {
-        if (asPointer)
-            builder->appendFormat("u8 *%s", id.c_str());
-        else if(width % 8 != 0 && width <= 64) {
-            unsigned int_size = 8 * ((width + 7) / 8);
-            builder->appendFormat("u%d %s:%d", int_size, id.c_str(), width);
-        }
-        else
-            builder->appendFormat("u8 %s[%d]", id.c_str(), bytesRequired());
+        builder->appendFormat(" %s:%d", id.c_str(), width);
+    }
+    else {
+        builder->appendFormat("u8 %s[%d]", id.c_str(), bytesRequired());
     }
 }
+void
+EBPFScalarType::emitInitializer(CodeBuilder *builder) {
+    if (true)
+        builder->append("{0}");
+    else
+        builder->append("0");
+}
+
 
 //////////////////////////////////////////////////////////
 
@@ -143,7 +147,7 @@ EBPFStructType::EBPFStructType(const IR::Type_StructLike* strct) :
     if (strct->is<IR::Type_Struct>())
         kind = "struct";
     else if (strct->is<IR::Type_Header>())
-        kind = "struct";
+        kind = "header";
     else if (strct->is<IR::Type_HeaderUnion>())
         kind = "union";
     else
@@ -194,12 +198,14 @@ void EBPFStructType::emit(CodeBuilder* builder) {
     builder->blockStart();
 
     for (auto f : fields) {
-        auto f_type = f->type;
         builder->emitIndent();
-        if (type->is<IR::Type_Struct>() || type->is<IR::Type_HeaderUnion>())
-            f_type->declare(builder, f->field->name, false);
-        else
-            f_type->declare(builder, f->field->name, false);
+        auto f_type = f->type;
+        bool asPointer = true;
+        if (f_type->is<EBPFScalarType>() || f_type->is<EBPFEnumType>()
+             || type->is<EBPFEnumType>() || type->is<IR::Type_Header>())
+            asPointer = false;
+
+        f_type->declare(builder, f->field->name, asPointer);
         builder->append("; ");
         builder->append("/* ");
         builder->append(f_type->type->toString());
@@ -217,8 +223,11 @@ void EBPFStructType::emit(CodeBuilder* builder) {
 }
 
 void
-EBPFStructType::declareArray(CodeBuilder* builder, cstring id, unsigned size) {
-    builder->appendFormat("%s %s[%d]", name.c_str(), id.c_str(), size);
+EBPFStructType::declareArray(CodeBuilder* builder, cstring id, unsigned size, bool asPointer) {
+    builder->appendFormat("%s ", name.c_str());
+    if (asPointer)
+        builder->append("*");
+    builder->appendFormat("%s[%d]", name.c_str(), id.c_str(), size);
 }
 
 ///////////////////////////////////////////////////////////////
@@ -252,18 +261,16 @@ unsigned EBPFTypeName::implementationWidthInBits() {
 }
 
 void
-EBPFTypeName::declareArray(CodeBuilder* builder, cstring id, unsigned size) {
-    declare(builder, id, false);
+EBPFTypeName::declareArray(CodeBuilder* builder, cstring id, unsigned size , bool asPointer) {
+    declare(builder, id, asPointer);
     builder->appendFormat("[%d]", size);
 }
 
 ////////////////////////////////////////////////////////////////
 
-void EBPFEnumType::declare(EBPF::CodeBuilder* builder, cstring id, bool asPointer) {
+void EBPFEnumType::declare(EBPF::CodeBuilder* builder, cstring id, bool) {
     builder->append("enum ");
     builder->append(getType()->name);
-    if (asPointer)
-        builder->append("*");
     builder->append(" ");
     builder->append(id);
 }

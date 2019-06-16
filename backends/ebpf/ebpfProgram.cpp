@@ -85,9 +85,9 @@ void EBPFProgram::emitC(CodeBuilder* builder, cstring header) {
     emitHeaderInstances(builder);
     builder->endOfStatement(true);
 
-    //builder->appendFormat("memset(&%s, 0, sizeof(%s))\n",
-    //    parser->headers->name.name, parser->headers->name.name);
-    //builder->endOfStatement(true);
+    builder->appendFormat("memset(&%s, 0, sizeof(%s))\n",
+       parser->headers->name.name, parser->headers->name.name);
+    builder->endOfStatement(true);
     declareTypes(builder);
     builder->newline();
 
@@ -138,6 +138,10 @@ void EBPFProgram::emitH(CodeBuilder* builder, cstring) {
     builder->appendLine("#define _P4_GEN_HEADER_");
     builder->target->emitIncludes(builder);
     builder->appendFormat("#define MAP_PATH \"%s\"", builder->target->sysMapPath().c_str());
+    builder->newline();
+    builder->append("/* distinguish headers and meta structures */");
+    builder->newline();
+    builder->append("#define header struct");
     builder->newline();
     emitTypes(builder);
     control->emitTableTypes(builder);
@@ -230,6 +234,8 @@ void EBPFProgram::emitPreamble(CodeBuilder* builder) {
 void EBPFProgram::emitLocalVariables(CodeBuilder* builder) {
     builder->emitIndent();
     builder->appendFormat("unsigned %s = 0;", offsetVar.c_str());
+    builder->newline();
+    builder->emitIndent();
     builder->appendFormat("unsigned %s_save = 0;", offsetVar.c_str());
     builder->newline();
 
@@ -270,10 +276,9 @@ void EBPFProgram::emitHeaderInstances(CodeBuilder* builder) {
 void EBPFProgram::emitPipeline(CodeBuilder* builder) {
     builder->emitIndent();
     builder->append(IR::ParserState::accept);
-    builder->append(":");
-    builder->newline();
-    builder->emitIndent();
+    builder->append(": ");
     builder->blockStart();
+    builder->newline();
     control->emit(builder);
     builder->blockEnd(true);
 }
