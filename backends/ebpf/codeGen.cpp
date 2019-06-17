@@ -47,16 +47,54 @@ bool CodeGenInspector::preorder(const IR::Declaration_Variable* decl) {
     return false;
 }
 
+// *(u8 *[]){ &(u32) {ntohl(ntohl(*(u32*)headers.ipv4->dstAddr) + 1)}
 bool CodeGenInspector::preorder(const IR::Operation_Binary* b) {
     widthCheck(b);
-    builder->append("(");
-    visit(b->left);
-    builder->spc();
-    builder->append(b->getStringOp());
-    builder->spc();
-    visit(b->right);
-    builder->append(")");
+    auto ebpftype = EBPFTypeFactory::instance->create(b->type);
+    if(auto st = ebpftype->to<EBPFScalarType>()) {
+        builder->append("&(");
+        st->emit(builder);
+        builder->append("){");
+        st->byteOperator(builder);
+        builder->append("(");
+        st->byteOperator(builder);
+        builder->append("(*(");
+        st->emit(builder);
+        builder->append("*)");
+        visit(b->left);
+        builder->append(")");
+        builder->spc();
+        builder->append(b->getStringOp());
+        builder->spc();
+        visit(b->right);
+        builder->append(")}");
+    } else {
+        builder->append("(");
+        visit(b->left);
+        builder->spc();
+        builder->append(b->getStringOp());
+        builder->spc();
+        visit(b->right);
+        builder->append(")");
+    }
     return false;
+}
+
+void initByteArray(CodeBuilder* builder, cstring input, unsigned bytes) {
+    builder->append("{");
+    if (strlen(input) % 2 != 0)
+      input = input.replace("0x", "0");
+    else
+      input = input.replace("0x", "");
+    const char *pos = input.c_str();
+    unsigned char val;
+    for (unsigned count = 0; count < bytes; count++) {
+      sscanf(pos, "%2hhx", &val);
+      builder->appendFormat("0x%02x,", val);
+      pos += 2;
+    }
+    builder->append("}");
+
 }
 
 bool CodeGenInspector::comparison(const IR::Operation_Relation* b) {
@@ -67,56 +105,23 @@ bool CodeGenInspector::comparison(const IR::Operation_Relation* b) {
                    EBPFScalarType::generatesScalar(et->to<EBPFScalarType>()->widthInBits()))
                   || et->is<EBPFBoolType>();
 
+    unsigned memcmp_size = (b->right->type->width_bits() + 7) / 8;
 
-    if (false) {
-        builder->append("if (");
-        visit(b->left);
-        builder->spc();
-        builder->append(b->getStringOp());
-        builder->spc();
-        visit(b->right);
-        builder->append(")");
-    } else {
-        builder->append("{u8 cmp[] = {");
-        cstring input = b->right->toString();
-        int memcmp_size = (b->right->type->width_bits() + 7) / 8;
-        if (strlen(input) % 2 != 0)
-          input = input.replace("0x", "0");
-        else
-          input = input.replace("0x", "");
-        const char *pos = input.c_str();
-        unsigned char val;
-        for (int count = 0; count < memcmp_size; count++) {
-          sscanf(pos, "%2hhx", &val);
-          builder->appendFormat("0x%02x,", val);
-          pos += 2;
-        }
-        builder->append("}");
-        builder->endOfStatement(true);
+    builder->emitIndent();
+    if (!et->is<IHasWidth>())
+        BUG("%1%: Comparisons for type %2% not yet implemented", type);
 
-        builder->emitIndent();
-        if (!et->is<IHasWidth>())
-            BUG("%1%: Comparisons for type %2% not yet implemented", type);
-        if (b->left->is<IR::Operation_Binary>()) {
-            builder->append("u8 bit_cmp = ");
-            visit(b->left);
-            builder->endOfStatement(true);
-            builder->append("if (");
-            builder->append("memcmp(");
-            builder->append("&bit_cmp");
-        }
-        else {
-            builder->append("if (");
-            builder->append("memcmp(");
-            visit(b->left);
-        }
-        builder->append(", cmp");
-        builder->appendFormat(", %d) ", memcmp_size);
-        builder->append(b->getStringOp());
-        builder->append(" 0)");
-        builder->appendLine("}");
+    builder->append("(memcmp(");
+    visit(b->left);
+    if(b->right->is<IR::Constant>())
+        builder->append(", (u8[]) {");
+    else
+        builder->append(", *(u8 *[]) {");
+    visit(b->right);
+    builder->appendFormat("}, %d) ", memcmp_size);
+    builder->append(b->getStringOp());
+    builder->append(" 0)");
 
-    }
     return false;
 }
 
@@ -299,40 +304,18 @@ bool CodeGenInspector::preorder(const IR::AssignmentStatement* a) {
         }
         builder->append(")");
         builder->endOfStatement();
-    } else if (lebpfType->is<EBPFScalarType>()) {
+    } else if(lebpfType->is<EBPFScalarType>()){
         scalar = lebpfType->to<EBPFScalarType>();
-        if (a->right->is<IR::Constant>()) {
-            builder->append("{u8 set[] = {");
-            cstring input = a->right->toString();
-            int memcpy_size = (a->right->type->width_bits() + 7) / 8;
-            if (strlen(input) % 2 != 0)
-              input = input.replace("0x", "0");
-            else
-              input = input.replace("0x", "");
-            const char *pos = input.c_str();
-            unsigned char val;
-            for (int count = 0; count < memcpy_size; count++) {
-              sscanf(pos, "%2hhx", &val);
-              builder->appendFormat("0x%02x,", val);
-              pos += 2;
-            }
-            builder->append("}");
-            builder->endOfStatement(true);
-            builder->emitIndent();
-            builder->append("memcpy(");
-            visit(a->left);
-            builder->appendFormat(", set, %d)", scalar->bytesRequired());
-            builder->endOfStatement(false);
-            builder->appendLine("}");
-        } else {
-            builder->append("memcpy(");
-            visit(a->left);
-            builder->append(", ");
-            visit(a->right);
-            builder->appendFormat(", %d)", scalar->bytesRequired());
-            builder->endOfStatement(false);
-        }
-    } else {
+        builder->append("memcpy(");
+        visit(a->left);
+        if(a->right->is<IR::Constant>())
+            builder->append(", (u8[]) {");
+        else
+            builder->append(", *(u8 *[]) {");
+        visit(a->right);
+        builder->appendFormat("}, %d)", scalar->bytesRequired());
+        builder->endOfStatement();
+    } else  {
         visit(a->left);
         builder->append(" = ");
         visit(a->right);
@@ -371,8 +354,9 @@ bool CodeGenInspector::preorder(const IR::EmptyStatement*) {
 }
 
 bool CodeGenInspector::preorder(const IR::IfStatement* s) {
-    builder->blockStart();
+    builder->append("if( ");
     visit(s->condition);
+    builder->append(")");
     if (!s->ifTrue->is<IR::BlockStatement>()) {
         builder->increaseIndent();
         builder->newline();
@@ -391,7 +375,6 @@ bool CodeGenInspector::preorder(const IR::IfStatement* s) {
         visit(s->ifFalse);
         builder->decreaseIndent();
     }
-    builder->blockEnd(true);
     return false;
 }
 

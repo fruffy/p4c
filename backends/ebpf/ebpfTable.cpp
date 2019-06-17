@@ -557,7 +557,7 @@ void EBPFCounterTable::emitCounterIncrement(CodeBuilder* builder,
     auto arg = expression->arguments->at(0);
 
     codeGen->visit(arg);
-    builder->appendFormat(",BYTES(%d))", arg->expression->type->width_bits());
+    builder->appendFormat(", BYTES(%d))", arg->expression->type->width_bits());
     builder->endOfStatement(true);
 
     builder->emitIndent();

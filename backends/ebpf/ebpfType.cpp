@@ -116,8 +116,19 @@ void EBPFScalarType::emit(CodeBuilder* builder) {
         builder->appendFormat("u8*");
 }
 
-void
-EBPFScalarType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
+void EBPFScalarType::byteOperator(CodeBuilder* builder) const {
+
+    if (width == 16)
+        builder->appendFormat("ntohs");
+    else if (width == 32)
+        builder->appendFormat("ntohl");
+    else if (width == 64)
+        builder->appendFormat("ntohll");
+    else
+        BUG("Unsupported size %d!", width);
+}
+
+void EBPFScalarType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
     if (asPointer)
         builder->appendFormat("u8 *%s", id.c_str());
     else if(width % 8 != 0) {

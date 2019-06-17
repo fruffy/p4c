@@ -130,7 +130,6 @@ bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
     }
     builder->emitIndent();
     builder->newline();
-    unsigned index = 0;
     for (auto e : expression->selectCases) {
         builder->emitIndent();
         if (e->keyset->is<IR::DefaultExpression>()) {
@@ -142,23 +141,6 @@ bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
                 builder->emitIndent();
             }
         } else {
-            builder->appendFormat("u8 branch_key%d[] = {", index);
-            cstring input = e->keyset->toString();
-            int memcmp_size = (e->keyset->type->width_bits() + 7) / 8;
-            if (strlen(input) % 2 != 0)
-                input = input.replace("0x", "0");
-            else
-                input = input.replace("0x", "");
-            const char *pos = input.c_str();
-            unsigned char val;
-            for (int count = 0; count < memcmp_size; count++) {
-                sscanf(pos, "%2hhx", &val);
-                builder->appendFormat("0x%02x,", val);
-                pos += 2;
-            }
-            builder->append("}");
-            builder->endOfStatement(true);
-            builder->emitIndent();
             builder->append("if(");
             bool first = true;
             for (auto c : expression->select->components) {
@@ -166,20 +148,31 @@ bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
                     builder->append(" && ");
                     first = false;
                 }
-                builder->append("memcmp(");
+                builder->append("(memcmp(");
                 auto mem = c->to<IR::Member>();
                 BUG_CHECK(mem != nullptr,
                           "%1%: Unexpected expression in switch statement", c);
                 visit(mem->expr);
-                builder->appendFormat("->%s, branch_key%d, ", mem->member.name, index);
-                builder->appendFormat("%d", memcmp_size);
-                builder->append(") == 0");
+                builder->appendFormat("->%s, (u8[]){", mem->member.name);
+                cstring input = e->keyset->toString();
+                unsigned memcmp_size = (e->keyset->type->width_bits() + 7) / 8;
+                if (strlen(input) % 2 != 0)
+                    input = input.replace("0x", "0");
+                else
+                    input = input.replace("0x", "");
+                const char *pos = input.c_str();
+                unsigned char val;
+                for (int count = 0; count < memcmp_size; count++) {
+                    sscanf(pos, "%2hhx", &val);
+                    builder->appendFormat("0x%02x,", val);
+                    pos += 2;
+                }
+                builder->appendFormat("}, %d) == 0)", memcmp_size);
             }
             builder->append(")");
             builder->newline();
             builder->emitIndent();
             builder->emitIndent();
-            index++;
         }
         builder->append("goto ");
         visit(e->state);
