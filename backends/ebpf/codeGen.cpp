@@ -23,6 +23,26 @@ limitations under the License.
 
 namespace EBPF {
 
+void code_initByteArray(CodeBuilder* builder, const IR::Constant *expression) {
+    if (!expression->is<IR::Constant>())
+        ::error("%1%: Unexpected type", expression);
+    unsigned bytes = (expression->type->width_bits() + 7) / 8;
+    cstring input = expression->toString();
+    builder->append("{");
+    if (strlen(input) % 2 != 0)
+      input = input.replace("0x", "0");
+    else
+      input = input.replace("0x", "");
+    const char *pos = input.c_str();
+    unsigned char val;
+    for (unsigned count = 0; count < bytes; count++) {
+      sscanf(pos, "%2hhx", &val);
+      builder->appendFormat("0x%02x,", val);
+      pos += 2;
+    }
+    builder->append("}");
+}
+
 void CodeGenInspector::substitute(const IR::Parameter* p, const IR::Parameter* with)
 { substitution.emplace(p, with); }
 
@@ -47,7 +67,9 @@ bool CodeGenInspector::preorder(const IR::Declaration_Variable* decl) {
     return false;
 }
 
-// *(u8 *[]){ &(u32) {ntohl(ntohl(*(u32*)headers.ipv4->dstAddr) + 1)}
+/* for example:
+ * &(u32) {ntohl(ntohl(*(u32 *)headers.ipv4->dstAddr) + }
+ */
 bool CodeGenInspector::preorder(const IR::Operation_Binary* b) {
     widthCheck(b);
     auto ebpftype = EBPFTypeFactory::instance->create(b->type);
@@ -55,12 +77,12 @@ bool CodeGenInspector::preorder(const IR::Operation_Binary* b) {
         builder->append("&(");
         st->emit(builder);
         builder->append("){");
-        st->byteOperator(builder);
+        // st->byteOperator(builder);
         builder->append("(");
-        st->byteOperator(builder);
+        // st->byteOperator(builder);
         builder->append("(*(");
         st->emit(builder);
-        builder->append("*)");
+        builder->append(" *)");
         visit(b->left);
         builder->append(")");
         builder->spc();
@@ -80,45 +102,20 @@ bool CodeGenInspector::preorder(const IR::Operation_Binary* b) {
     return false;
 }
 
-void initByteArray(CodeBuilder* builder, cstring input, unsigned bytes) {
-    builder->append("{");
-    if (strlen(input) % 2 != 0)
-      input = input.replace("0x", "0");
-    else
-      input = input.replace("0x", "");
-    const char *pos = input.c_str();
-    unsigned char val;
-    for (unsigned count = 0; count < bytes; count++) {
-      sscanf(pos, "%2hhx", &val);
-      builder->appendFormat("0x%02x,", val);
-      pos += 2;
-    }
-    builder->append("}");
-
-}
 
 bool CodeGenInspector::comparison(const IR::Operation_Relation* b) {
-    auto type = typeMap->getType(b->left);
-    auto et = EBPFTypeFactory::instance->create(type);
-
-    bool scalar = (et->is<EBPFScalarType>() &&
-                   EBPFScalarType::generatesScalar(et->to<EBPFScalarType>()->widthInBits()))
-                  || et->is<EBPFBoolType>();
-
     unsigned memcmp_size = (b->right->type->width_bits() + 7) / 8;
-
-    builder->emitIndent();
-    if (!et->is<IHasWidth>())
-        BUG("%1%: Comparisons for type %2% not yet implemented", type);
-
     builder->append("(memcmp(");
     visit(b->left);
-    if(b->right->is<IR::Constant>())
-        builder->append(", (u8[]) {");
-    else
+    if(auto ec = b->right->to<IR::Constant>()) {
+        builder->appendFormat(", (u8 [%d]) ", memcmp_size);
+        code_initByteArray(builder, ec);
+    } else {
         builder->append(", *(u8 *[]) {");
-    visit(b->right);
-    builder->appendFormat("}, %d) ", memcmp_size);
+        visit(b->right);
+        builder->append("}");
+    }
+    builder->appendFormat(", %d) ", memcmp_size);
     builder->append(b->getStringOp());
     builder->append(" 0)");
 
@@ -163,8 +160,8 @@ bool CodeGenInspector::preorder(const IR::Cast* c) {
     auto et = EBPFTypeFactory::instance->create(c->destType);
     et->emit(builder);
     builder->append(")");
-    visit(c->expr);
     builder->append(")");
+    visit(c->expr);
     return false;
 }
 
@@ -176,7 +173,7 @@ bool CodeGenInspector::preorder(const IR::Member* expression) {
         if (type->is<IR::Type_Struct>() || type->is<IR::Type_HeaderUnion>())
             builder->append(".");
         else
-            builder->append("->");
+            builder->append(".");
     }
     builder->append(expression->member);
     return false;
@@ -275,9 +272,7 @@ bool CodeGenInspector::preorder(const IR::Type_Enum* type) {
 
 bool CodeGenInspector::preorder(const IR::AssignmentStatement* a) {
     auto ltype = typeMap->getType(a->left);
-    auto rtype = typeMap->getType(a->right);
     auto lebpfType = EBPFTypeFactory::instance->create(ltype);
-    auto rebpfType = EBPFTypeFactory::instance->create(rtype);
     EBPFScalarType* scalar = nullptr;
 
     if (a->right->is<IR::MethodCallExpression>()) {
@@ -308,12 +303,15 @@ bool CodeGenInspector::preorder(const IR::AssignmentStatement* a) {
         scalar = lebpfType->to<EBPFScalarType>();
         builder->append("memcpy(");
         visit(a->left);
-        if(a->right->is<IR::Constant>())
-            builder->append(", (u8[]) {");
-        else
+        if(auto ec = a->right->to<IR::Constant>()) {
+            builder->appendFormat(", (u8 [%d]) ", scalar->bytesRequired());
+            code_initByteArray(builder, ec);
+        } else {
             builder->append(", *(u8 *[]) {");
-        visit(a->right);
-        builder->appendFormat("}, %d)", scalar->bytesRequired());
+            visit(a->right);
+            builder->append("}");
+        }
+        builder->appendFormat(", %d)", scalar->bytesRequired());
         builder->endOfStatement();
     } else  {
         visit(a->left);
@@ -326,11 +324,17 @@ bool CodeGenInspector::preorder(const IR::AssignmentStatement* a) {
 
 bool CodeGenInspector::preorder(const IR::BlockStatement* s) {
     builder->blockStart();
+    bool first = true;
     for (auto a : s->components) {
-        builder->emitIndent();
+        if (!first) {
+            builder->newline();
+            builder->emitIndent();
+        }
+        first = false;
         visit(a);
-        builder->newline();
     }
+    if (!s->components.empty())
+        builder->newline();
     builder->blockEnd(false);
     return false;
 }
@@ -356,7 +360,7 @@ bool CodeGenInspector::preorder(const IR::EmptyStatement*) {
 bool CodeGenInspector::preorder(const IR::IfStatement* s) {
     builder->append("if( ");
     visit(s->condition);
-    builder->append(")");
+    builder->append(") ");
     if (!s->ifTrue->is<IR::BlockStatement>()) {
         builder->increaseIndent();
         builder->newline();

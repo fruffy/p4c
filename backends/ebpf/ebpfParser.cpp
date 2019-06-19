@@ -98,20 +98,20 @@ bool StateTranslationVisitor::preorder(const IR::ParserState* parserState) {
     builder->append(":");
     builder->spc();
     builder->blockStart();
+    builder->emitIndent();
 
     visit(parserState->components, "components");
+    builder->emitIndent();
     if (parserState->selectExpression == nullptr) {
-        builder->emitIndent();
         builder->append("goto ");
         builder->append(IR::ParserState::reject);
         builder->endOfStatement(true);
-    } else if (parserState->selectExpression->is<IR::SelectExpression>()) {
+    } else if (parserState->selectExpression->is<IR::SelectExpression>())
         visit(parserState->selectExpression);
-    } else {
+    else {
         // must be a PathExpression which is a state name
         if (!parserState->selectExpression->is<IR::PathExpression>())
             BUG("Expected a PathExpression, got a %1%", parserState->selectExpression);
-        builder->emitIndent();
         builder->append("goto ");
         visit(parserState->selectExpression);
         builder->endOfStatement(true);
@@ -121,20 +121,33 @@ bool StateTranslationVisitor::preorder(const IR::ParserState* parserState) {
     return false;
 }
 
+void parser_initByteArray(CodeBuilder* builder, const IR::Constant *expression) {
+    if (!expression->is<IR::Constant>())
+        ::error("%1%: Unexpected type", expression);
+    unsigned bytes = (expression->type->width_bits() + 7) / 8;
+    cstring input = expression->toString();
+    builder->append("{");
+    if (strlen(input) % 2 != 0)
+      input = input.replace("0x", "0");
+    else
+      input = input.replace("0x", "");
+    const char *pos = input.c_str();
+    unsigned char val;
+    for (unsigned count = 0; count < bytes; count++) {
+      sscanf(pos, "%2hhx", &val);
+      builder->appendFormat("0x%02x,", val);
+      pos += 2;
+    }
+    builder->append("}");
+}
+
 bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
     hasDefault = false;
-    if (expression->select->components.size() != 1) {
-        // TODO: this does not handle correctly tuples
-        ::error("%1%: only supporting a single argument for select", expression->select);
-        return false;
-    }
-    builder->emitIndent();
-    builder->newline();
     for (auto e : expression->selectCases) {
-        builder->emitIndent();
         if (e->keyset->is<IR::DefaultExpression>()) {
             hasDefault = true;
             if (expression->selectCases.size() > 1) {
+                builder->emitIndent();
                 builder->append("else");
                 builder->newline();
                 builder->emitIndent();
@@ -143,6 +156,7 @@ bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
         } else {
             builder->append("if(");
             bool first = true;
+            int memcmp_size = (e->keyset->type->width_bits() + 7) / 8;
             for (auto c : expression->select->components) {
                 if (!first) {
                     builder->append(" && ");
@@ -153,21 +167,12 @@ bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
                 BUG_CHECK(mem != nullptr,
                           "%1%: Unexpected expression in switch statement", c);
                 visit(mem->expr);
-                builder->appendFormat("->%s, (u8[]){", mem->member.name);
-                cstring input = e->keyset->toString();
-                unsigned memcmp_size = (e->keyset->type->width_bits() + 7) / 8;
-                if (strlen(input) % 2 != 0)
-                    input = input.replace("0x", "0");
+                builder->appendFormat(".%s, (u8 [%d])", mem->member.name, memcmp_size);
+                if(auto ec = e->keyset->to<IR::Constant>())
+                    parser_initByteArray(builder, ec);
                 else
-                    input = input.replace("0x", "");
-                const char *pos = input.c_str();
-                unsigned char val;
-                for (int count = 0; count < memcmp_size; count++) {
-                    sscanf(pos, "%2hhx", &val);
-                    builder->appendFormat("0x%02x,", val);
-                    pos += 2;
-                }
-                builder->appendFormat("}, %d) == 0)", memcmp_size);
+                    visit(e->keyset);
+                builder->appendFormat(", %d) == 0)", memcmp_size);
             }
             builder->append(")");
             builder->newline();
@@ -177,7 +182,6 @@ bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
         builder->append("goto ");
         visit(e->state);
         builder->endOfStatement(true);
-        builder->emitIndent();
     }
 
     if (!hasDefault) {
@@ -204,96 +208,6 @@ bool StateTranslationVisitor::preorder(const IR::SelectCase* selectCase) {
     visit(selectCase->state);
     builder->endOfStatement(true);
     return false;
-}
-void
-StateTranslationVisitor::compileExtractField(
-    const IR::Expression* expr, cstring field, unsigned alignment, EBPFType* type) {
-    unsigned widthToExtract = dynamic_cast<IHasWidth*>(type)->widthInBits();
-    auto program = state->parser->program;
-
-    if (widthToExtract <= 64) {
-        unsigned lastBitIndex = widthToExtract + alignment - 1;
-        unsigned lastWordIndex = lastBitIndex / 8;
-        unsigned wordsToRead = lastWordIndex + 1;
-        unsigned loadSize;
-
-        const char* helper = nullptr;
-        if (wordsToRead <= 1) {
-            helper = "load_byte";
-            loadSize = 8;
-        } else if (widthToExtract <= 16)  {
-            helper = "load_half";
-            loadSize = 16;
-        } else if (widthToExtract <= 32) {
-            helper = "load_word";
-            loadSize = 32;
-        } else {
-            if (widthToExtract > 64) BUG("Unexpected width %d", widthToExtract);
-            helper = "load_dword";
-            loadSize = 64;
-        }
-
-        unsigned shift = loadSize - alignment - widthToExtract;
-        builder->emitIndent();
-        visit(expr);
-        builder->appendFormat(".%s = (", field.c_str());
-        type->emit(builder);
-        builder->appendFormat(")((%s(%s, BYTES(%s))",
-                              helper,
-                              program->packetStartVar.c_str(),
-                              program->offsetVar.c_str());
-        if (shift != 0)
-            builder->appendFormat(" >> %d", shift);
-        builder->append(")");
-
-        if (widthToExtract != loadSize) {
-            builder->append(" & EBPF_MASK(");
-            type->emit(builder);
-            builder->appendFormat(", %d)", widthToExtract);
-        }
-
-        builder->append(")");
-        builder->endOfStatement(true);
-    } else {
-        // wide values; read all bytes one by one.
-        unsigned shift;
-        if (alignment == 0)
-            shift = 0;
-        else
-            shift = 8 - alignment;
-
-        const char* helper;
-        if (shift == 0)
-            helper = "load_byte";
-        else
-            helper = "load_half";
-        auto bt = EBPFTypeFactory::instance->create(IR::Type_Bits::get(8));
-        unsigned bytes = ROUNDUP(widthToExtract, 8);
-        for (unsigned i=0; i < bytes; i++) {
-            builder->emitIndent();
-            visit(expr);
-            builder->appendFormat(".%s[%d] = (", field.c_str(), i);
-            bt->emit(builder);
-            builder->appendFormat(")((%s(%s, BYTES(%s) + %d) >> %d)",
-                                  helper,
-                                  program->packetStartVar.c_str(),
-                                  program->offsetVar.c_str(), i, shift);
-
-            if ((i == bytes - 1) && (widthToExtract % 8 != 0)) {
-                builder->append(" & EBPF_MASK(");
-                bt->emit(builder);
-                builder->appendFormat(", %d)", widthToExtract % 8);
-            }
-
-            builder->append(")");
-            builder->endOfStatement(true);
-        }
-    }
-
-    builder->emitIndent();
-    builder->appendFormat("%s += %d", program->offsetVar.c_str(), widthToExtract);
-    builder->endOfStatement(true);
-    builder->newline();
 }
 
 void
@@ -325,8 +239,10 @@ StateTranslationVisitor::compileExtract(const IR::Expression* destination) {
     builder->blockEnd(true);
 
     builder->emitIndent();
+    builder->append("memcpy(&");
     visit(destination);
-    builder->appendFormat(" = ebpf_packetStart + BYTES(%s)", program->offsetVar.c_str());
+    builder->appendFormat(", ebpf_packetStart + BYTES(%s)", program->offsetVar.c_str());
+    builder->appendFormat(", BYTES(%d))", width);
     builder->endOfStatement(true);
 
     builder->emitIndent();

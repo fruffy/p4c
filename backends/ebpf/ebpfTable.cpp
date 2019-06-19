@@ -265,6 +265,26 @@ void EBPFTable::emitInstance(CodeBuilder* builder) {
                                    cstring("struct ") + valueTypeName, 1);
 }
 
+void table_initByteArray(CodeBuilder* builder, const IR::Constant *expression) {
+    if (!expression->is<IR::Constant>())
+        ::error("%1%: Unexpected type", expression);
+    unsigned bytes = (expression->type->width_bits() + 7) / 8;
+    cstring input = expression->toString();
+    builder->append("{");
+    if (strlen(input) % 2 != 0)
+      input = input.replace("0x", "0");
+    else
+      input = input.replace("0x", "");
+    const char *pos = input.c_str();
+    unsigned char val;
+    for (unsigned count = 0; count < bytes; count++) {
+      sscanf(pos, "%2hhx", &val);
+      builder->appendFormat("0x%02x,", val);
+      pos += 2;
+    }
+    builder->append("}");
+}
+
 void EBPFTable::emitKey(CodeBuilder* builder, cstring keyName) {
     if (keyGenerator == nullptr)
         return;
@@ -272,47 +292,23 @@ void EBPFTable::emitKey(CodeBuilder* builder, cstring keyName) {
         auto ebpfType = ::get(keyTypes, c);
         cstring fieldName = ::get(keyFieldNames, c);
         CHECK_NULL(fieldName);
-        bool memcpy = false;
         EBPFScalarType* scalar = nullptr;
-        unsigned width = 0;
+
         if (ebpfType->is<EBPFScalarType>()) {
             scalar = ebpfType->to<EBPFScalarType>();
-            width = scalar->implementationWidthInBits();
-            memcpy = true; //!EBPFScalarType::generatesScalar(width);
-        }
-
-        if (memcpy) {
             builder->emitIndent();
-            builder->append("{ ");
-            builder->append("u8 set[] = {");
-            cstring input = c->expression->toString();
-            int memcpy_size = (c->expression->type->width_bits() + 7) / 8;
-            if (strlen(input) % 2 != 0)
-              input = input.replace("0x", "0");
-            else
-              input = input.replace("0x", "");
-            const char *pos = input.c_str();
-            unsigned char val;
-            for (int count = 0; count < memcpy_size; count++) {
-              sscanf(pos, "%2hhx", &val);
-              builder->appendFormat("0x%02x,", val);
-              pos += 2;
-            }
-            builder->append("}");
             builder->endOfStatement(true);
-
-            builder->emitIndent();
             builder->appendFormat("memcpy(%s.%s, ", keyName.c_str(), fieldName.c_str());
-
-/*            if (ebpfType->is<EBPFScalarType>())
-                builder->append("&");*/
-            if (c->expression->type->is<IR::Constant>())
-                builder->append("set");
-            else
+            if(auto ec = c->expression->to<IR::Constant>()) {
+                builder->appendFormat(" (u8 [%d]) ", scalar->bytesRequired());
+                table_initByteArray(builder, ec);
+            } else {
+                builder->append(" *(u8 *[]) {");
                 codeGen->visit(c->expression);
+                builder->append("}");
+            }
             builder->appendFormat(", %d)", scalar->bytesRequired());
-            builder->endOfStatement(false);
-            builder->appendLine(" }");
+            builder->endOfStatement();
         } else {
             builder->appendFormat("%s.%s = ", keyName.c_str(), fieldName.c_str());
             codeGen->visit(c->expression);
@@ -549,9 +545,10 @@ void EBPFCounterTable::emitCounterIncrement(CodeBuilder* builder,
     builder->spc();
     builder->append(keyName);
     builder->endOfStatement(true);
+    builder->emitIndent();
     builder->append("memcpy(&");
     builder->append(keyName);
-    builder->append(",");
+    builder->append(", ");
 
     BUG_CHECK(expression->arguments->size() == 1, "Expected just 1 argument for %1%", expression);
     auto arg = expression->arguments->at(0);

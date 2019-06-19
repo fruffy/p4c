@@ -84,13 +84,13 @@ void EBPFProgram::emitC(CodeBuilder* builder, cstring header) {
 
     emitHeaderInstances(builder);
     builder->endOfStatement(true);
-
-    builder->appendFormat("memset(&%s, 0, sizeof(%s))\n",
+    builder->emitIndent();
+    builder->appendFormat("memset(&%s, 0, sizeof(%s))",
        parser->headers->name.name, parser->headers->name.name);
     builder->endOfStatement(true);
+
     declareTypes(builder);
     builder->newline();
-
     emitLocalVariables(builder);
     builder->newline();
     builder->emitIndent();
@@ -176,12 +176,8 @@ void EBPFProgram::declareTypes(CodeBuilder* builder) {
     for (auto d : program->objects) {
         if (d->is<IR::Type_Header>()) {
             auto ht = d->to<IR::Type_Header>();
-            auto h_type = EBPFTypeFactory::instance->create(ht);
             if (d == nullptr)
                 continue;
-            builder->emitIndent();
-            h_type->declare(builder, ht->name.name, true);
-            builder->endOfStatement(true);
             builder->emitIndent();
             builder->appendFormat("bool %s_valid = false", ht->name.name);
             builder->endOfStatement(true);
@@ -233,35 +229,39 @@ void EBPFProgram::emitPreamble(CodeBuilder* builder) {
 
 void EBPFProgram::emitLocalVariables(CodeBuilder* builder) {
     builder->emitIndent();
-    builder->appendFormat("unsigned %s = 0;", offsetVar.c_str());
-    builder->newline();
-    builder->emitIndent();
-    builder->appendFormat("unsigned %s_save = 0;", offsetVar.c_str());
-    builder->newline();
+    builder->appendFormat("unsigned %s = 0", offsetVar.c_str());
+    builder->endOfStatement(true);
 
     builder->emitIndent();
-    builder->appendFormat("enum %s %s = %s;", errorEnum.c_str(), errorVar.c_str(),
+    builder->appendFormat("unsigned %s_save = 0", offsetVar.c_str());
+    builder->endOfStatement(true);
+
+    builder->emitIndent();
+    builder->appendFormat("enum %s %s = %s", errorEnum.c_str(), errorVar.c_str(),
                           P4::P4CoreLibrary::instance.noError.str());
-    builder->newline();
+    builder->endOfStatement(true);
 
     builder->emitIndent();
-    builder->appendFormat("void* %s = %s;",
+    builder->appendFormat("void* %s = %s",
                           packetStartVar.c_str(),
                           builder->target->dataOffset(model.CPacketName.str()).c_str());
+    builder->endOfStatement(true);
+
     builder->newline();
     builder->emitIndent();
-    builder->appendFormat("void* %s = %s;",
+    builder->appendFormat("void* %s = %s",
                           packetEndVar.c_str(),
                           builder->target->dataEnd(model.CPacketName.str()).c_str());
-    builder->newline();
+    builder->endOfStatement(true);
 
     builder->emitIndent();
-    builder->appendFormat("u8 %s = 0;", control->accept->name.name.c_str());
-    builder->newline();
+    builder->appendFormat("u8 %s = ", control->accept->name.name.c_str());
+    builder->appendFormat("%s", builder->target->dropReturnCode().c_str());
+    builder->endOfStatement(true);
 
     builder->emitIndent();
-    builder->appendFormat("u32 %s = 0;", zeroKey.c_str());
-    builder->newline();
+    builder->appendFormat("u32 %s = 0", zeroKey.c_str());
+    builder->endOfStatement(true);
 
     builder->emitIndent();
     builder->appendFormat("unsigned char %s;", byteVar.c_str());
@@ -278,7 +278,6 @@ void EBPFProgram::emitPipeline(CodeBuilder* builder) {
     builder->append(IR::ParserState::accept);
     builder->append(": ");
     builder->blockStart();
-    builder->newline();
     control->emit(builder);
     builder->blockEnd(true);
 }

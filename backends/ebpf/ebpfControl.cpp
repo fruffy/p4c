@@ -112,78 +112,6 @@ bool ControlBodyTranslator::preorder(const IR::MethodCallExpression* expression)
     return false;
 }
 
-void ControlBodyTranslator::compileEmitField(const IR::Expression* expr, cstring field,
-                                             unsigned alignment, EBPFType* type) {
-    unsigned widthToEmit = dynamic_cast<IHasWidth*>(type)->widthInBits();
-    cstring swap = "";
-    //if (widthToEmit == 16)
-    //    swap = "htons";
-    //else if (widthToEmit == 32)
-    //    swap = "htonl";
-    if (!swap.isNullOrEmpty()) {
-        builder->emitIndent();
-        visit(expr);
-        builder->appendFormat(".%s = %s(", field.c_str(), swap);
-        visit(expr);
-        builder->appendFormat(".%s)", field.c_str());
-        builder->endOfStatement(true);
-    }
-
-    auto program = control->program;
-    unsigned bitsInFirstByte = widthToEmit % 8;
-    if (bitsInFirstByte == 0) bitsInFirstByte = 8;
-    unsigned bitsInCurrentByte = bitsInFirstByte;
-    unsigned left = widthToEmit;
-
-    for (unsigned i=0; i < (widthToEmit + 7) / 8; i++) {
-        builder->emitIndent();
-
-        unsigned freeBits = alignment == 0 ? (8 - alignment) : 8;
-        unsigned bitsToWrite = bitsInCurrentByte > freeBits ? freeBits : bitsInCurrentByte;
-
-        builder->appendFormat("%s = ((u8)(", program->byteVar.c_str());
-        if (bitsToWrite == 8)
-            builder->append("&");
-
-        visit(expr);
-        builder->appendFormat(".%s))", field.c_str(), i);
-        builder->endOfStatement(true);
-
-
-        BUG_CHECK((bitsToWrite > 0) && (bitsToWrite <= 8), "invalid bitsToWrite %d", bitsToWrite);
-        builder->emitIndent();
-        if (bitsToWrite == 8)
-            builder->appendFormat("write_byte(%s, BYTES(%s) + %d, (%s) << %d)",
-                                  program->packetStartVar.c_str(), program->offsetVar.c_str(), i,
-                                  program->byteVar.c_str(), 8 - bitsToWrite);
-        else
-            builder->appendFormat("write_partial(%s + BYTES(%s) + %d, %d, (%s) << %d)",
-                                  program->packetStartVar.c_str(), program->offsetVar.c_str(), i,
-                                  alignment,
-                                  program->byteVar.c_str(), 8 - bitsToWrite);
-        builder->endOfStatement(true);
-        left -= bitsToWrite;
-        bitsInCurrentByte -= bitsToWrite;
-
-        if (bitsInCurrentByte > 0) {
-            builder->emitIndent();
-            builder->appendFormat(
-                "write_byte(%s, BYTES(%s) + %d + 1, (%s << %d))",
-                program->packetStartVar.c_str(),
-                program->offsetVar.c_str(), i, program->byteVar.c_str(), 8 - alignment % 8);
-            builder->endOfStatement(true);
-            left -= bitsInCurrentByte;
-        }
-
-        alignment = (alignment + bitsToWrite) % 8;
-        bitsInCurrentByte = left >= 8 ? 8 : left;
-    }
-
-    builder->emitIndent();
-    builder->appendFormat("%s += %d", program->offsetVar.c_str(), widthToEmit);
-    builder->endOfStatement(true);
-}
-
 void ControlBodyTranslator::compileEmit(const IR::Vector<IR::Argument>* args) {
     BUG_CHECK(args->size() == 1, "%1%: expected 1 argument for emit", args);
 
@@ -195,12 +123,11 @@ void ControlBodyTranslator::compileEmit(const IR::Vector<IR::Argument>* args) {
         return;
     }
 
-/*    auto program = control->program;
+    auto program = control->program;
     builder->emitIndent();
     builder->append("if (");
-    //visit(expr);
     builder->appendFormat("%s_valid", ht->name.name);
-    builder->append(")");
+    builder->append(") ");
     builder->blockStart();
 
     unsigned width = ht->width_bits();
@@ -223,11 +150,17 @@ void ControlBodyTranslator::compileEmit(const IR::Vector<IR::Argument>* args) {
 
 
     builder->emitIndent();
-    builder->appendFormat("memcpy(%s + BYTES(%s), ", program->packetStartVar.c_str(), program->offsetVar.c_str());
+    builder->appendFormat("memcpy(%s + BYTES(%s), &", program->packetStartVar.c_str(), program->offsetVar.c_str());
     visit(expr);
     builder->appendFormat(", BYTES(%d))", ht->width_bits());
     builder->endOfStatement(true);
-    builder->blockEnd(true);*/
+
+    builder->emitIndent();
+    builder->appendFormat("%s += ", program->offsetVar.c_str());
+    builder->appendFormat("%d", width);
+    builder->endOfStatement(true);
+    builder->newline();
+    builder->blockEnd(true);
 
     return;
 }
@@ -359,15 +292,13 @@ bool ControlBodyTranslator::preorder(const IR::IfStatement* statement) {
     }
 
     // This is almost the same as the base class method
-    if (!statement->condition->is<IR::Operation_Relation>()) {
-        builder->append("if (");
-        if (isHit)
-            builder->append(control->hitVariable);
-        else
-            visit(statement->condition);
-        builder->append(")");
-    } else
+    builder->emitIndent();
+    builder->append("if (");
+    if (isHit)
+        builder->append(control->hitVariable);
+    else
         visit(statement->condition);
+    builder->append(") ");
 
     if (!statement->ifTrue->is<IR::BlockStatement>()) {
         builder->increaseIndent();

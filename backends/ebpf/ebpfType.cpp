@@ -119,11 +119,11 @@ void EBPFScalarType::emit(CodeBuilder* builder) {
 void EBPFScalarType::byteOperator(CodeBuilder* builder) const {
 
     if (width == 16)
-        builder->appendFormat("ntohs");
+        builder->appendFormat("htons");
     else if (width == 32)
-        builder->appendFormat("ntohl");
+        builder->appendFormat("htonl");
     else if (width == 64)
-        builder->appendFormat("ntohll");
+        builder->appendFormat("htonll");
     else
         BUG("Unsupported size %d!", width);
 }
@@ -191,11 +191,9 @@ EBPFStructType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
 
 void EBPFStructType::emitInitializer(CodeBuilder* builder) {
     builder->blockStart();
-    if (type->is<IR::Type>()) {
-        builder->appendFormat("u8 %s_valid = false", name);
-        builder->endOfStatement(true);
-    } else {
-        BUG("Unexpected type %1%", type);
+    if (type->is<IR::Type_Header>()) {
+        // builder->appendFormat("bool %s_valid = false", name);
+        // builder->endOfStatement(true);
     }
     builder->blockEnd(false);
 }
@@ -211,7 +209,7 @@ void EBPFStructType::emit(CodeBuilder* builder) {
     for (auto f : fields) {
         builder->emitIndent();
         auto f_type = f->type;
-        bool asPointer = true;
+        bool asPointer = false;
         if (f_type->is<EBPFScalarType>() || f_type->is<EBPFEnumType>()
              || type->is<EBPFEnumType>() || type->is<IR::Type_Header>())
             asPointer = false;
