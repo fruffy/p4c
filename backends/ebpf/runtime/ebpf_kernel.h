@@ -27,6 +27,7 @@ limitations under the License.
 #include <string.h>         // memset()
 #include <unistd.h>         // syscall()
 #include <sys/syscall.h>    // __NR_bpf
+#include <linux/bpf.h>      // bpf syscalls
 #include "ebpf_common.h"
 
 
@@ -204,6 +205,17 @@ struct bpf_map_def {
     unsigned int id;
     unsigned int pinning;
 };
+
+struct bpf_elf_map {
+        __u32 type;
+        __u32 size_key;
+        __u32 size_value;
+        __u32 max_elem;
+        __u32 flags;
+        __u32 id;
+        __u32 pinning;
+};
+
 
 /* simple descriptor which replaces the kernel sk_buff structure */
 #define SK_BUFF struct __sk_buff

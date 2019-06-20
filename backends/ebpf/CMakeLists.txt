@@ -85,9 +85,15 @@ set(EBPF_DRIVER_KERNEL "${CMAKE_CURRENT_SOURCE_DIR}/run-ebpf-test.py -t kernel -
 set(EBPF_DRIVER_BCC "${CMAKE_CURRENT_SOURCE_DIR}/run-ebpf-test.py -t bcc -c \"${P4C_BINARY_DIR}/p4c-ebpf\"")
 set(EBPF_DRIVER_TEST "${CMAKE_CURRENT_SOURCE_DIR}/run-ebpf-test.py -t test -c \"${P4C_BINARY_DIR}/p4c-ebpf\"")
 
-set (XFAIL_TESTS_KERNEL)
-set (XFAIL_TESTS_BCC)
-set (XFAIL_TESTS_TEST)
+set (XFAIL_TESTS_KERNEL
+    ${P4C_SOURCE_DIR}/testdata/p4_16_samples/issue870_ebpf.p4
+    )
+set (XFAIL_TESTS_BCC
+    ${P4C_SOURCE_DIR}/testdata/p4_16_samples/issue870_ebpf.p4
+    )
+set (XFAIL_TESTS_TEST
+    ${P4C_SOURCE_DIR}/testdata/p4_16_samples/issue870_ebpf.p4
+    )
 
 set (EBPF_TEST_SUITES
   "${P4C_SOURCE_DIR}/testdata/p4_16_samples/*_ebpf.p4"
