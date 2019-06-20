@@ -134,7 +134,6 @@ void EBPFScalarType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
     else if(width % 8 != 0) {
         if (width > 64)
             BUG("Unsupported size %d!", width);
-        unsigned int_size = 8 * ((width + 7) / 8);
         emit(builder);
         builder->appendFormat(" %s:%d", id.c_str(), width);
     }

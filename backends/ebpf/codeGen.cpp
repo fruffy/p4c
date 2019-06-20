@@ -23,22 +23,31 @@ limitations under the License.
 
 namespace EBPF {
 
-void code_initByteArray(CodeBuilder* builder, const IR::Constant *expression) {
+void initByteArray(CodeBuilder* builder, const IR::Constant *expression) {
     if (!expression->is<IR::Constant>())
         ::error("%1%: Unexpected type", expression);
     unsigned bytes = (expression->type->width_bits() + 7) / 8;
     cstring input = expression->toString();
     builder->append("{");
-    if (strlen(input) % 2 != 0)
-      input = input.replace("0x", "0");
-    else
-      input = input.replace("0x", "");
-    const char *pos = input.c_str();
-    unsigned char val;
-    for (unsigned count = 0; count < bytes; count++) {
-      sscanf(pos, "%2hhx", &val);
-      builder->appendFormat("0x%02x,", val);
-      pos += 2;
+    if (input.startsWith("0x")) {
+        if (strlen(input) % 2 != 0)
+          input = input.replace("0x", "0");
+        else
+          input = input.replace("0x", "");
+        const char *pos = input.c_str();
+        unsigned char val;
+        for (unsigned count = 0; count < bytes; count++) {
+          sscanf(pos, "%2hhx", &val);
+          builder->appendFormat("0x%02x,", val);
+          pos += 2;
+        }
+    }
+    else {
+        unsigned value = expression->asUint64();
+        unsigned char *int_p=(unsigned char*)&value;
+        unsigned width  = (expression->type->width_bits() + 7) / 8;
+        for(int i = width - 1; i >= 0; i--)
+            builder->appendFormat("0x%02x,", int_p[i]);
     }
     builder->append("}");
 }
@@ -47,7 +56,10 @@ void CodeGenInspector::substitute(const IR::Parameter* p, const IR::Parameter* w
 { substitution.emplace(p, with); }
 
 bool CodeGenInspector::preorder(const IR::Constant* expression) {
-    builder->append(expression->toString());
+    unsigned width = (expression->type->width_bits() + 7) / 8;
+    builder->appendFormat("((u8 [%d])", width);
+    initByteArray(builder, expression);
+    builder->append(")");
     return true;
 }
 
@@ -73,32 +85,46 @@ bool CodeGenInspector::preorder(const IR::Declaration_Variable* decl) {
 bool CodeGenInspector::preorder(const IR::Operation_Binary* b) {
     widthCheck(b);
     auto ebpftype = EBPFTypeFactory::instance->create(b->type);
+    builder->append("(");
     if(auto st = ebpftype->to<EBPFScalarType>()) {
+
+        /* get the address of the result */
         builder->append("&(");
         st->emit(builder);
-        builder->append("){");
-        // st->byteOperator(builder);
+        builder->append(")");
+        /* convert result back to network byte order */
+        builder->append("{");
+        st->byteOperator(builder);
         builder->append("(");
-        // st->byteOperator(builder);
+        /* convert left to host-order integer */
+        st->byteOperator(builder);
         builder->append("(*(");
         st->emit(builder);
         builder->append(" *)");
         visit(b->left);
         builder->append(")");
+        /* the operator */
         builder->spc();
         builder->append(b->getStringOp());
         builder->spc();
+        /* convert right to host-order integer */
+        st->byteOperator(builder);
+        builder->append("(*(");
+        st->emit(builder);
+        builder->append(" *)");
         visit(b->right);
-        builder->append(")}");
+        builder->append(")");;
+        /* done */
+        builder->append(")");
+        builder->append("}");
     } else {
-        builder->append("(");
         visit(b->left);
         builder->spc();
         builder->append(b->getStringOp());
         builder->spc();
         visit(b->right);
-        builder->append(")");
     }
+    builder->append(")");
     return false;
 }
 
@@ -107,14 +133,8 @@ bool CodeGenInspector::comparison(const IR::Operation_Relation* b) {
     unsigned memcmp_size = (b->right->type->width_bits() + 7) / 8;
     builder->append("(memcmp(");
     visit(b->left);
-    if(auto ec = b->right->to<IR::Constant>()) {
-        builder->appendFormat(", (u8 [%d]) ", memcmp_size);
-        code_initByteArray(builder, ec);
-    } else {
-        builder->append(", *(u8 *[]) {");
-        visit(b->right);
-        builder->append("}");
-    }
+    builder->append(", ");
+    visit(b->right);
     builder->appendFormat(", %d) ", memcmp_size);
     builder->append(b->getStringOp());
     builder->append(" 0)");
@@ -147,8 +167,10 @@ bool CodeGenInspector::preorder(const IR::ArrayIndex* a) {
     builder->append("(");
     visit(a->left);
     builder->append("[");
-    visit(a->right);
-    builder->append("]");
+    if (auto ct = a->right->to<IR::Constant>())
+        builder->appendFormat("%lu]", ct->asUint64());
+    else
+        ::error("%1%: Unexpected type", a->right);
     builder->append(")");
     return false;
 }
@@ -272,7 +294,9 @@ bool CodeGenInspector::preorder(const IR::Type_Enum* type) {
 
 bool CodeGenInspector::preorder(const IR::AssignmentStatement* a) {
     auto ltype = typeMap->getType(a->left);
+    auto rtype = typeMap->getType(a->left);
     auto lebpfType = EBPFTypeFactory::instance->create(ltype);
+    auto rebpfType = EBPFTypeFactory::instance->create(rtype);
     EBPFScalarType* scalar = nullptr;
 
     if (a->right->is<IR::MethodCallExpression>()) {
@@ -283,13 +307,11 @@ bool CodeGenInspector::preorder(const IR::AssignmentStatement* a) {
         builder->append("(");
         for (auto p : *mi->substitution.getParametersInArgumentOrder()) {
             if (first) {
-                builder->append("(u8 *) ");
+                builder->append("");
                 visit(a->left);
-                builder->append(", (u8 *) ");
+                first = false;
             }
-            else
-                builder->append(", (u8 *) ");
-            first = false;
+            builder->append(", ");
 
             if (p->direction == IR::Direction::Out ||
                 p->direction == IR::Direction::InOut)
@@ -299,18 +321,12 @@ bool CodeGenInspector::preorder(const IR::AssignmentStatement* a) {
         }
         builder->append(")");
         builder->endOfStatement();
-    } else if(lebpfType->is<EBPFScalarType>()){
+    } else if(lebpfType->is<EBPFScalarType>() || rebpfType->is<EBPFScalarType>()){
         scalar = lebpfType->to<EBPFScalarType>();
         builder->append("memcpy(");
         visit(a->left);
-        if(auto ec = a->right->to<IR::Constant>()) {
-            builder->appendFormat(", (u8 [%d]) ", scalar->bytesRequired());
-            code_initByteArray(builder, ec);
-        } else {
-            builder->append(", *(u8 *[]) {");
-            visit(a->right);
-            builder->append("}");
-        }
+        builder->append(", ");
+        visit(a->right);
         builder->appendFormat(", %d)", scalar->bytesRequired());
         builder->endOfStatement();
     } else  {

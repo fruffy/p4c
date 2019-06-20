@@ -121,26 +121,6 @@ bool StateTranslationVisitor::preorder(const IR::ParserState* parserState) {
     return false;
 }
 
-void parser_initByteArray(CodeBuilder* builder, const IR::Constant *expression) {
-    if (!expression->is<IR::Constant>())
-        ::error("%1%: Unexpected type", expression);
-    unsigned bytes = (expression->type->width_bits() + 7) / 8;
-    cstring input = expression->toString();
-    builder->append("{");
-    if (strlen(input) % 2 != 0)
-      input = input.replace("0x", "0");
-    else
-      input = input.replace("0x", "");
-    const char *pos = input.c_str();
-    unsigned char val;
-    for (unsigned count = 0; count < bytes; count++) {
-      sscanf(pos, "%2hhx", &val);
-      builder->appendFormat("0x%02x,", val);
-      pos += 2;
-    }
-    builder->append("}");
-}
-
 bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
     hasDefault = false;
     for (auto e : expression->selectCases) {
@@ -167,11 +147,8 @@ bool StateTranslationVisitor::preorder(const IR::SelectExpression* expression) {
                 BUG_CHECK(mem != nullptr,
                           "%1%: Unexpected expression in switch statement", c);
                 visit(mem->expr);
-                builder->appendFormat(".%s, (u8 [%d])", mem->member.name, memcmp_size);
-                if(auto ec = e->keyset->to<IR::Constant>())
-                    parser_initByteArray(builder, ec);
-                else
-                    visit(e->keyset);
+                builder->appendFormat(".%s, ", mem->member.name, memcmp_size);
+                visit(e->keyset);
                 builder->appendFormat(", %d) == 0)", memcmp_size);
             }
             builder->append(")");
