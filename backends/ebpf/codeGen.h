@@ -56,7 +56,6 @@ class CodeGenInspector : public Inspector {
         CHECK_NULL(builder);
         this->builder = builder;
     }
-
     void substitute(const IR::Parameter* p, const IR::Parameter* with);
     void copySubstitutions(CodeGenInspector* other) {
         for (auto s : other->substitution)

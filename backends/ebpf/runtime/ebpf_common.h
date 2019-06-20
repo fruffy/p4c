@@ -19,9 +19,10 @@ limitations under the License.
  * It should be included with new target header files.
  */
 
-#include <stdio.h>      // printf
-#include <linux/bpf.h>  // types, and general bpf definitions
-#include <stdbool.h>    // true and false
+#include <stdio.h>          // printf
+#include <stdbool.h>        // true and false
+#include <string.h>         // memset()
+#include <linux/types.h>    // u8, u16, u32, u64
 
 typedef signed char s8;
 typedef unsigned char u8;

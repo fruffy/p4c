@@ -63,8 +63,8 @@ EBPFBoolType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
 
 /////////////////////////////////////////////////////////////
 
-void EBPFStackType::declare(CodeBuilder* builder, cstring id, bool) {
-    elementType->declareArray(builder, id, size);
+void EBPFStackType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
+    elementType->declareArray(builder, id, size, asPointer);
 }
 
 void EBPFStackType::emitInitializer(CodeBuilder* builder) {
@@ -116,21 +116,39 @@ void EBPFScalarType::emit(CodeBuilder* builder) {
         builder->appendFormat("u8*");
 }
 
-void
-EBPFScalarType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
-    if (EBPFScalarType::generatesScalar(width)) {
+void EBPFScalarType::byteOperator(CodeBuilder* builder) const {
+
+    if (width == 16)
+        builder->appendFormat("htons");
+    else if (width == 32)
+        builder->appendFormat("htonl");
+    else if (width == 64)
+        builder->appendFormat("htonll");
+    else
+        BUG("Unsupported size %d!", width);
+}
+
+void EBPFScalarType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
+    if (asPointer)
+        builder->appendFormat("u8 *%s", id.c_str());
+    else if(width % 8 != 0) {
+        if (width > 64)
+            BUG("Unsupported size %d!", width);
         emit(builder);
-        if (asPointer)
-            builder->append("*");
-        builder->spc();
-        builder->append(id);
-    } else {
-        if (asPointer)
-            builder->append("u8*");
-        else
-            builder->appendFormat("u8 %s[%d]", id.c_str(), bytesRequired());
+        builder->appendFormat(" %s:%d", id.c_str(), width);
+    }
+    else {
+        builder->appendFormat("u8 %s[%d]", id.c_str(), bytesRequired());
     }
 }
+void
+EBPFScalarType::emitInitializer(CodeBuilder *builder) {
+    if (true)
+        builder->append("{0}");
+    else
+        builder->append("0");
+}
+
 
 //////////////////////////////////////////////////////////
 
@@ -139,7 +157,7 @@ EBPFStructType::EBPFStructType(const IR::Type_StructLike* strct) :
     if (strct->is<IR::Type_Struct>())
         kind = "struct";
     else if (strct->is<IR::Type_Header>())
-        kind = "struct";
+        kind = "header";
     else if (strct->is<IR::Type_HeaderUnion>())
         kind = "union";
     else
@@ -164,26 +182,17 @@ EBPFStructType::EBPFStructType(const IR::Type_StructLike* strct) :
 void
 EBPFStructType::declare(CodeBuilder* builder, cstring id, bool asPointer) {
     builder->append(kind);
+    builder->appendFormat(" %s ", name.c_str());
     if (asPointer)
         builder->append("*");
-    builder->appendFormat(" %s %s", name.c_str(), id.c_str());
+    builder->appendFormat("%s", id.c_str());
 }
 
 void EBPFStructType::emitInitializer(CodeBuilder* builder) {
     builder->blockStart();
-    if (type->is<IR::Type_Struct>() || type->is<IR::Type_HeaderUnion>()) {
-        for (auto f : fields) {
-            builder->emitIndent();
-            builder->appendFormat(".%s = ", f->field->name.name);
-            f->type->emitInitializer(builder);
-            builder->append(",");
-            builder->newline();
-        }
-    } else if (type->is<IR::Type_Header>()) {
-        builder->emitIndent();
-        builder->appendLine(".ebpf_valid = 0");
-    } else {
-        BUG("Unexpected type %1%", type);
+    if (type->is<IR::Type_Header>()) {
+        // builder->appendFormat("bool %s_valid = false", name);
+        // builder->endOfStatement(true);
     }
     builder->blockEnd(false);
 }
@@ -197,13 +206,17 @@ void EBPFStructType::emit(CodeBuilder* builder) {
     builder->blockStart();
 
     for (auto f : fields) {
-        auto type = f->type;
         builder->emitIndent();
+        auto f_type = f->type;
+        bool asPointer = false;
+        if (f_type->is<EBPFScalarType>() || f_type->is<EBPFEnumType>()
+             || type->is<EBPFEnumType>() || type->is<IR::Type_Header>())
+            asPointer = false;
 
-        type->declare(builder, f->field->name, false);
+        f_type->declare(builder, f->field->name, asPointer);
         builder->append("; ");
         builder->append("/* ");
-        builder->append(type->type->toString());
+        builder->append(f_type->type->toString());
         if (f->comment != nullptr) {
             builder->append(" ");
             builder->append(f->comment);
@@ -212,22 +225,17 @@ void EBPFStructType::emit(CodeBuilder* builder) {
         builder->newline();
     }
 
-    if (type->is<IR::Type_Header>()) {
-        builder->emitIndent();
-        auto type = EBPFTypeFactory::instance->create(IR::Type_Boolean::get());
-        if (type != nullptr) {
-            type->declare(builder, "ebpf_valid", false);
-            builder->endOfStatement(true);
-        }
-    }
 
     builder->blockEnd(false);
     builder->endOfStatement(true);
 }
 
 void
-EBPFStructType::declareArray(CodeBuilder* builder, cstring id, unsigned size) {
-    builder->appendFormat("%s %s[%d]", name.c_str(), id.c_str(), size);
+EBPFStructType::declareArray(CodeBuilder* builder, cstring id, unsigned size, bool asPointer) {
+    builder->appendFormat("%s ", name.c_str());
+    if (asPointer)
+        builder->append("*");
+    builder->appendFormat("%s[%d]", name.c_str(), id.c_str(), size);
 }
 
 ///////////////////////////////////////////////////////////////
@@ -261,18 +269,16 @@ unsigned EBPFTypeName::implementationWidthInBits() {
 }
 
 void
-EBPFTypeName::declareArray(CodeBuilder* builder, cstring id, unsigned size) {
-    declare(builder, id, false);
+EBPFTypeName::declareArray(CodeBuilder* builder, cstring id, unsigned size , bool asPointer) {
+    declare(builder, id, asPointer);
     builder->appendFormat("[%d]", size);
 }
 
 ////////////////////////////////////////////////////////////////
 
-void EBPFEnumType::declare(EBPF::CodeBuilder* builder, cstring id, bool asPointer) {
+void EBPFEnumType::declare(EBPF::CodeBuilder* builder, cstring id, bool) {
     builder->append("enum ");
     builder->append(getType()->name);
-    if (asPointer)
-        builder->append("*");
     builder->append(" ");
     builder->append(id);
 }

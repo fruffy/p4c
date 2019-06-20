@@ -53,7 +53,6 @@ class ActionTranslationVisitor : public CodeGenInspector {
         visit(expression->path);
         return false;
     }
-
     bool preorder(const IR::P4Action* act) {
         action = act;
         visit(action->body);
@@ -282,6 +281,7 @@ void EBPFTable::emitInstance(CodeBuilder* builder) {
                                    cstring("struct ") + valueTypeName, 1);
 }
 
+
 void EBPFTable::emitKey(CodeBuilder* builder, cstring keyName) {
     if (keyGenerator == nullptr)
         return;
@@ -289,25 +289,21 @@ void EBPFTable::emitKey(CodeBuilder* builder, cstring keyName) {
         auto ebpfType = ::get(keyTypes, c);
         cstring fieldName = ::get(keyFieldNames, c);
         CHECK_NULL(fieldName);
-        bool memcpy = false;
         EBPFScalarType* scalar = nullptr;
-        unsigned width = 0;
+
         if (ebpfType->is<EBPFScalarType>()) {
             scalar = ebpfType->to<EBPFScalarType>();
-            width = scalar->implementationWidthInBits();
-            memcpy = !EBPFScalarType::generatesScalar(width);
-        }
-
-        builder->emitIndent();
-        if (memcpy) {
-            builder->appendFormat("memcpy(&%s.%s, &", keyName.c_str(), fieldName.c_str());
+            builder->emitIndent();
+            builder->endOfStatement(true);
+            builder->appendFormat("memcpy(%s.%s, ", keyName.c_str(), fieldName.c_str());
             codeGen->visit(c->expression);
             builder->appendFormat(", %d)", scalar->bytesRequired());
+            builder->endOfStatement();
         } else {
             builder->appendFormat("%s.%s = ", keyName.c_str(), fieldName.c_str());
             codeGen->visit(c->expression);
+            builder->endOfStatement(true);
         }
-        builder->endOfStatement(true);
     }
 }
 
@@ -372,26 +368,28 @@ void EBPFTable::emitInitializer(CodeBuilder* builder) {
     builder->newline();
 
     builder->emitIndent();
-    builder->appendFormat("struct %s %s = ", valueTypeName.c_str(), value.c_str());
-    builder->blockStart();
-    builder->emitIndent();
-    builder->appendFormat(".action = %s,", name.c_str());
-    builder->newline();
+    builder->appendFormat("struct %s %s = {",
+                          valueTypeName.c_str(), value.c_str());
+    builder->appendFormat(".action = %s}", name.c_str());
+    builder->endOfStatement(true);
 
     CodeGenInspector cg(program->refMap, program->typeMap);
     cg.setBuilder(builder);
 
-    builder->emitIndent();
-    builder->appendFormat(".u = {.%s = {", name.c_str());
     for (auto p : *mi->substitution.getParametersInArgumentOrder()) {
+        unsigned width = (p->type->width_bits() + 7) / 8;
+        builder->emitIndent();
+        builder->appendFormat("memcpy(&%s.u.%s, ", value.c_str(), name.c_str());
         auto arg = mi->substitution.lookup(p);
-        arg->apply(cg);
-        builder->append(",");
+        if (p->type->is<IR::Type_Boolean>()) {
+            builder->append("&(u8){");
+            arg->apply(cg);
+            builder->append("}");
+        } else
+            arg->apply(cg);
+        builder->appendFormat(", %d)", width);
+        builder->endOfStatement(true);
     }
-    builder->append("}},\n");
-
-    builder->blockEnd(false);
-    builder->endOfStatement(true);
 
     builder->emitIndent();
     builder->append("int ok = ");
@@ -427,9 +425,17 @@ void EBPFTable::emitInitializer(CodeBuilder* builder) {
 
         auto entryAction = e->getAction();
         builder->emitIndent();
-        builder->appendFormat("struct %s %s = {", keyTypeName.c_str(), key.c_str());
-        e->getKeys()->apply(cg);
-        builder->append("}");
+        builder->appendFormat("struct %s %s", keyTypeName.c_str(), key.c_str());
+        builder->endOfStatement(true);
+        unsigned offset = 0;
+        builder->emitIndent();
+        for (auto actionKey : e->getKeys()->components) {
+            unsigned width = (actionKey->type->width_bits() + 7) / 8;
+            builder->appendFormat("memcpy(((u8 *)&%s) + %d, ", key.c_str(), offset);
+            actionKey->apply(cg);
+            builder->appendFormat(", %d)", width);
+            offset += width;
+        }
         builder->endOfStatement(true);
 
         BUG_CHECK(entryAction->is<IR::MethodCallExpression>(),
@@ -443,27 +449,28 @@ void EBPFTable::emitInitializer(CodeBuilder* builder) {
         cstring name = EBPFObject::externalName(action);
 
         builder->emitIndent();
-        builder->appendFormat("struct %s %s = ",
+        builder->appendFormat("struct %s %s = {",
                               valueTypeName.c_str(), value.c_str());
-        builder->blockStart();
-        builder->emitIndent();
-        builder->appendFormat(".action = %s,", name.c_str());
-        builder->newline();
+        builder->appendFormat(".action = %s}", name.c_str());
+        builder->endOfStatement(true);
 
         CodeGenInspector cg(program->refMap, program->typeMap);
         cg.setBuilder(builder);
 
-        builder->emitIndent();
-        builder->appendFormat(".u = {.%s = {", name.c_str());
         for (auto p : *mi->substitution.getParametersInArgumentOrder()) {
+            unsigned width = (p->type->width_bits() + 7) / 8;
+            builder->emitIndent();
+            builder->appendFormat("memcpy(&%s.u.%s, ", value.c_str(), name.c_str());
             auto arg = mi->substitution.lookup(p);
-            arg->apply(cg);
-            builder->append(",");
+            if (p->type->is<IR::Type_Boolean>()) {
+                builder->append("&(u8){");
+                arg->apply(cg);
+                builder->append("}");
+            } else
+                arg->apply(cg);
+            builder->appendFormat(", %d)", width);
+            builder->endOfStatement(true);
         }
-        builder->append("}},\n");
-
-        builder->blockEnd(false);
-        builder->endOfStatement(true);
 
         builder->emitIndent();
         builder->append("int ok = ");
@@ -541,12 +548,17 @@ void EBPFCounterTable::emitCounterIncrement(CodeBuilder* builder,
     builder->append(keyTypeName);
     builder->spc();
     builder->append(keyName);
-    builder->append(" = ");
+    builder->endOfStatement(true);
+    builder->emitIndent();
+    builder->append("memcpy(&");
+    builder->append(keyName);
+    builder->append(", ");
 
     BUG_CHECK(expression->arguments->size() == 1, "Expected just 1 argument for %1%", expression);
     auto arg = expression->arguments->at(0);
 
     codeGen->visit(arg);
+    builder->appendFormat(", BYTES(%d))", arg->expression->type->width_bits());
     builder->endOfStatement(true);
 
     builder->emitIndent();

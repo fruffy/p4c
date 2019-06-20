@@ -62,7 +62,7 @@ bool ControlBodyTranslator::preorder(const IR::MethodCallExpression* expression)
         visit(a);
     }
     builder->append(")");
-    builder->append("*/");
+    builder->append(" */");
     builder->newline();
 
     auto mi = P4::MethodInstance::resolve(expression,
@@ -86,17 +86,16 @@ bool ControlBodyTranslator::preorder(const IR::MethodCallExpression* expression)
     auto bim = mi->to<P4::BuiltInMethod>();
     if (bim != nullptr) {
         builder->emitIndent();
+        auto type = typeMap->getType(bim->appliedTo);
+        auto ht = type->to<IR::Type_Header>();
         if (bim->name == IR::Type_Header::isValid) {
-            visit(bim->appliedTo);
-            builder->append(".ebpf_valid");
+            builder->appendFormat("%s_valid", ht->name.name);
             return false;
         } else if (bim->name == IR::Type_Header::setValid) {
-            visit(bim->appliedTo);
-            builder->append(".ebpf_valid = true");
+            builder->appendFormat("%s_valid = true", ht->name.name);
             return false;
         } else if (bim->name == IR::Type_Header::setInvalid) {
-            visit(bim->appliedTo);
-            builder->append(".ebpf_valid = false");
+            builder->appendFormat("%s_valid = false", ht->name.name);
             return false;
         }
     }
@@ -113,73 +112,6 @@ bool ControlBodyTranslator::preorder(const IR::MethodCallExpression* expression)
     return false;
 }
 
-void ControlBodyTranslator::compileEmitField(const IR::Expression* expr, cstring field,
-                                             unsigned alignment, EBPFType* type) {
-    unsigned widthToEmit = dynamic_cast<IHasWidth*>(type)->widthInBits();
-    cstring swap = "";
-    if (widthToEmit == 16)
-        swap = "htons";
-    else if (widthToEmit == 32)
-        swap = "htonl";
-    if (!swap.isNullOrEmpty()) {
-        builder->emitIndent();
-        visit(expr);
-        builder->appendFormat(".%s = %s(", field.c_str(), swap);
-        visit(expr);
-        builder->appendFormat(".%s)", field.c_str());
-        builder->endOfStatement(true);
-    }
-
-    auto program = control->program;
-    unsigned bitsInFirstByte = widthToEmit % 8;
-    if (bitsInFirstByte == 0) bitsInFirstByte = 8;
-    unsigned bitsInCurrentByte = bitsInFirstByte;
-    unsigned left = widthToEmit;
-
-    for (unsigned i=0; i < (widthToEmit + 7) / 8; i++) {
-        builder->emitIndent();
-        builder->appendFormat("%s = ((char*)(&", program->byteVar.c_str());
-        visit(expr);
-        builder->appendFormat(".%s))[%d]", field.c_str(), i);
-        builder->endOfStatement(true);
-
-        unsigned freeBits = alignment == 0 ? (8 - alignment) : 8;
-        unsigned bitsToWrite = bitsInCurrentByte > freeBits ? freeBits : bitsInCurrentByte;
-
-        BUG_CHECK((bitsToWrite > 0) && (bitsToWrite <= 8), "invalid bitsToWrite %d", bitsToWrite);
-        builder->emitIndent();
-        if (alignment == 0)
-            builder->appendFormat("write_byte(%s, BYTES(%s) + %d, (%s) << %d)",
-                                  program->packetStartVar.c_str(), program->offsetVar.c_str(), i,
-                                  program->byteVar.c_str(), 8 - bitsToWrite);
-        else
-            builder->appendFormat("write_partial(%s + BYTES(%s) + %d, %d, (%s) << %d)",
-                                  program->packetStartVar.c_str(), program->offsetVar.c_str(), i,
-                                  alignment,
-                                  program->byteVar.c_str(), 8 - bitsToWrite);
-        builder->endOfStatement(true);
-        left -= bitsToWrite;
-        bitsInCurrentByte -= bitsToWrite;
-
-        if (bitsInCurrentByte > 0) {
-            builder->emitIndent();
-            builder->appendFormat(
-                "write_byte(%s, BYTES(%s) + %d + 1, (%s << %d))",
-                program->packetStartVar.c_str(),
-                program->offsetVar.c_str(), i, program->byteVar.c_str(), 8 - alignment % 8);
-            builder->endOfStatement(true);
-            left -= bitsInCurrentByte;
-        }
-
-        alignment = (alignment + bitsToWrite) % 8;
-        bitsInCurrentByte = left >= 8 ? 8 : left;
-    }
-
-    builder->emitIndent();
-    builder->appendFormat("%s += %d", program->offsetVar.c_str(), widthToEmit);
-    builder->endOfStatement(true);
-}
-
 void ControlBodyTranslator::compileEmit(const IR::Vector<IR::Argument>* args) {
     BUG_CHECK(args->size() == 1, "%1%: expected 1 argument for emit", args);
 
@@ -194,8 +126,8 @@ void ControlBodyTranslator::compileEmit(const IR::Vector<IR::Argument>* args) {
     auto program = control->program;
     builder->emitIndent();
     builder->append("if (");
-    visit(expr);
-    builder->append(".ebpf_valid) ");
+    builder->appendFormat("%s_valid", ht->name.name);
+    builder->append(") ");
     builder->blockStart();
 
     unsigned width = ht->width_bits();
@@ -216,21 +148,20 @@ void ControlBodyTranslator::compileEmit(const IR::Vector<IR::Argument>* args) {
     builder->newline();
     builder->blockEnd(true);
 
-    unsigned alignment = 0;
-    for (auto f : ht->fields) {
-        auto ftype = typeMap->getType(f);
-        auto etype = EBPFTypeFactory::instance->create(ftype);
-        auto et = dynamic_cast<IHasWidth*>(etype);
-        if (et == nullptr) {
-            ::error("Only headers with fixed widths supported %1%", f);
-            return;
-        }
-        compileEmitField(expr, f->name, alignment, etype);
-        alignment += et->widthInBits();
-        alignment %= 8;
-    }
 
+    builder->emitIndent();
+    builder->appendFormat("memcpy(%s + BYTES(%s), &", program->packetStartVar.c_str(), program->offsetVar.c_str());
+    visit(expr);
+    builder->appendFormat(", BYTES(%d))", ht->width_bits());
+    builder->endOfStatement(true);
+
+    builder->emitIndent();
+    builder->appendFormat("%s += ", program->offsetVar.c_str());
+    builder->appendFormat("%d", width);
+    builder->endOfStatement(true);
+    builder->newline();
     builder->blockEnd(true);
+
     return;
 }
 
@@ -303,7 +234,7 @@ void ControlBodyTranslator::processApply(const P4::ApplyMethod* method) {
     builder->emitIndent();
     builder->appendLine("/* miss; find default action */");
     builder->emitIndent();
-    builder->appendFormat("%s = 0", control->hitVariable.c_str());
+    builder->appendFormat("%s = false", control->hitVariable.c_str());
     builder->endOfStatement(true);
 
     builder->emitIndent();
@@ -314,7 +245,7 @@ void ControlBodyTranslator::processApply(const P4::ApplyMethod* method) {
     builder->append(" else ");
     builder->blockStart();
     builder->emitIndent();
-    builder->appendFormat("%s = 1", control->hitVariable.c_str());
+    builder->appendFormat("%s = true", control->hitVariable.c_str());
     builder->endOfStatement(true);
     builder->blockEnd(true);
 
@@ -358,16 +289,17 @@ bool ControlBodyTranslator::preorder(const IR::IfStatement* statement) {
         auto member = statement->condition->to<IR::Member>();
         CHECK_NULL(member);
         visit(member->expr);  // table application.  Sets 'hitVariable'
-        builder->emitIndent();
     }
 
     // This is almost the same as the base class method
+    builder->emitIndent();
     builder->append("if (");
     if (isHit)
         builder->append(control->hitVariable);
     else
         visit(statement->condition);
     builder->append(") ");
+
     if (!statement->ifTrue->is<IR::BlockStatement>()) {
         builder->increaseIndent();
         builder->newline();
@@ -489,6 +421,8 @@ void EBPFControl::emitDeclaration(CodeBuilder* builder, const IR::Declaration* d
         auto etype = EBPFTypeFactory::instance->create(vd->type);
         builder->emitIndent();
         etype->declare(builder, vd->name, false);
+        builder->append(" = ");
+        etype->emitInitializer(builder);
         builder->endOfStatement(true);
         BUG_CHECK(vd->initializer == nullptr,
                   "%1%: declarations with initializers not supported", decl);
@@ -505,6 +439,8 @@ void EBPFControl::emit(CodeBuilder* builder) {
     auto hitType = EBPFTypeFactory::instance->create(IR::Type_Boolean::get());
     builder->emitIndent();
     hitType->declare(builder, hitVariable, false);
+    builder->append(" = ");
+    hitType->emitInitializer(builder);
     builder->endOfStatement(true);
     for (auto a : controlBlock->container->controlLocals)
         emitDeclaration(builder, a);

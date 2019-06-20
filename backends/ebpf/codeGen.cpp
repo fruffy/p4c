@@ -23,11 +23,43 @@ limitations under the License.
 
 namespace EBPF {
 
+void initByteArray(CodeBuilder* builder, const IR::Constant *expression) {
+    if (!expression->is<IR::Constant>())
+        ::error("%1%: Unexpected type", expression);
+    unsigned bytes = (expression->type->width_bits() + 7) / 8;
+    cstring input = expression->toString();
+    builder->append("{");
+    if (input.startsWith("0x")) {
+        if (strlen(input) % 2 != 0)
+          input = input.replace("0x", "0");
+        else
+          input = input.replace("0x", "");
+        const char *pos = input.c_str();
+        unsigned char val;
+        for (unsigned count = 0; count < bytes; count++) {
+          sscanf(pos, "%2hhx", &val);
+          builder->appendFormat("0x%02x,", val);
+          pos += 2;
+        }
+    }
+    else {
+        unsigned value = expression->asUint64();
+        unsigned char *int_p=(unsigned char*)&value;
+        unsigned width  = (expression->type->width_bits() + 7) / 8;
+        for(int i = width - 1; i >= 0; i--)
+            builder->appendFormat("0x%02x,", int_p[i]);
+    }
+    builder->append("}");
+}
+
 void CodeGenInspector::substitute(const IR::Parameter* p, const IR::Parameter* with)
 { substitution.emplace(p, with); }
 
 bool CodeGenInspector::preorder(const IR::Constant* expression) {
-    builder->append(expression->toString());
+    unsigned width = (expression->type->width_bits() + 7) / 8;
+    builder->appendFormat("((u8 [%d])", width);
+    initByteArray(builder, expression);
+    builder->append(")");
     return true;
 }
 
@@ -47,43 +79,66 @@ bool CodeGenInspector::preorder(const IR::Declaration_Variable* decl) {
     return false;
 }
 
+/* for example:
+ * &(u32) {ntohl(ntohl(*(u32 *)headers.ipv4->dstAddr) + }
+ */
 bool CodeGenInspector::preorder(const IR::Operation_Binary* b) {
     widthCheck(b);
+    auto ebpftype = EBPFTypeFactory::instance->create(b->type);
     builder->append("(");
-    visit(b->left);
-    builder->spc();
-    builder->append(b->getStringOp());
-    builder->spc();
-    visit(b->right);
-    builder->append(")");
-    return false;
-}
+    if(auto st = ebpftype->to<EBPFScalarType>()) {
 
-bool CodeGenInspector::comparison(const IR::Operation_Relation* b) {
-    auto type = typeMap->getType(b->left);
-    auto et = EBPFTypeFactory::instance->create(type);
-
-    bool scalar = (et->is<EBPFScalarType>() &&
-                   EBPFScalarType::generatesScalar(et->to<EBPFScalarType>()->widthInBits()))
-                  || et->is<EBPFBoolType>();
-    if (scalar) {
+        /* get the address of the result */
+        builder->append("&(");
+        st->emit(builder);
+        builder->append(")");
+        /* convert result back to network byte order */
+        builder->append("{");
+        st->byteOperator(builder);
         builder->append("(");
+        /* convert left to host-order integer */
+        st->byteOperator(builder);
+        builder->append("(*(");
+        st->emit(builder);
+        builder->append(" *)");
+        visit(b->left);
+        builder->append(")");
+        /* the operator */
+        builder->spc();
+        builder->append(b->getStringOp());
+        builder->spc();
+        /* convert right to host-order integer */
+        st->byteOperator(builder);
+        builder->append("(*(");
+        st->emit(builder);
+        builder->append(" *)");
+        visit(b->right);
+        builder->append(")");;
+        /* done */
+        builder->append(")");
+        builder->append("}");
+    } else {
         visit(b->left);
         builder->spc();
         builder->append(b->getStringOp());
         builder->spc();
         visit(b->right);
-        builder->append(")");
-    } else {
-        if (!et->is<IHasWidth>())
-            BUG("%1%: Comparisons for type %2% not yet implemented", type);
-        unsigned width = et->to<IHasWidth>()->implementationWidthInBits();
-        builder->append("memcmp(&");
-        visit(b->left);
-        builder->append(", &");
-        visit(b->right);
-        builder->appendFormat(", %d)", width / 8);
     }
+    builder->append(")");
+    return false;
+}
+
+
+bool CodeGenInspector::comparison(const IR::Operation_Relation* b) {
+    unsigned memcmp_size = (b->right->type->width_bits() + 7) / 8;
+    builder->append("(memcmp(");
+    visit(b->left);
+    builder->append(", ");
+    visit(b->right);
+    builder->appendFormat(", %d) ", memcmp_size);
+    builder->append(b->getStringOp());
+    builder->append(" 0)");
+
     return false;
 }
 
@@ -112,8 +167,10 @@ bool CodeGenInspector::preorder(const IR::ArrayIndex* a) {
     builder->append("(");
     visit(a->left);
     builder->append("[");
-    visit(a->right);
-    builder->append("]");
+    if (auto ct = a->right->to<IR::Constant>())
+        builder->appendFormat("%lu]", ct->asUint64());
+    else
+        ::error("%1%: Unexpected type", a->right);
     builder->append(")");
     return false;
 }
@@ -125,8 +182,8 @@ bool CodeGenInspector::preorder(const IR::Cast* c) {
     auto et = EBPFTypeFactory::instance->create(c->destType);
     et->emit(builder);
     builder->append(")");
-    visit(c->expr);
     builder->append(")");
+    visit(c->expr);
     return false;
 }
 
@@ -134,7 +191,11 @@ bool CodeGenInspector::preorder(const IR::Member* expression) {
     auto ei = P4::EnumInstance::resolve(expression, typeMap);
     if (ei == nullptr) {
         visit(expression->expr);
-        builder->append(".");
+        auto type = expression->expr->type;
+        if (type->is<IR::Type_Struct>() || type->is<IR::Type_HeaderUnion>())
+            builder->append(".");
+        else
+            builder->append(".");
     }
     builder->append(expression->member);
     return false;
@@ -173,17 +234,16 @@ bool CodeGenInspector::preorder(const IR::MethodCallExpression* expression) {
     auto bim = mi->to<P4::BuiltInMethod>();
     if (bim != nullptr) {
         builder->emitIndent();
+        auto type = typeMap->getType(bim->appliedTo);
+        auto ht = type->to<IR::Type_Header>();
         if (bim->name == IR::Type_Header::isValid) {
-            visit(bim->appliedTo);
-            builder->append(".ebpf_valid");
+            builder->appendFormat("%s_valid", ht->name.name);
             return false;
         } else if (bim->name == IR::Type_Header::setValid) {
-            visit(bim->appliedTo);
-            builder->append(".ebpf_valid = true");
+            builder->appendFormat("%s_valid = true", ht->name.name);
             return false;
         } else if (bim->name == IR::Type_Header::setInvalid) {
-            visit(bim->appliedTo);
-            builder->append(".ebpf_valid = false");
+            builder->appendFormat("%s_valid = false", ht->name.name);
             return false;
         }
     }
@@ -234,28 +294,47 @@ bool CodeGenInspector::preorder(const IR::Type_Enum* type) {
 
 bool CodeGenInspector::preorder(const IR::AssignmentStatement* a) {
     auto ltype = typeMap->getType(a->left);
-    auto ebpfType = EBPFTypeFactory::instance->create(ltype);
-    bool memcpy = false;
+    auto rtype = typeMap->getType(a->left);
+    auto lebpfType = EBPFTypeFactory::instance->create(ltype);
+    auto rebpfType = EBPFTypeFactory::instance->create(rtype);
     EBPFScalarType* scalar = nullptr;
-    unsigned width = 0;
-    if (ebpfType->is<EBPFScalarType>()) {
-        scalar = ebpfType->to<EBPFScalarType>();
-        width = scalar->implementationWidthInBits();
-        memcpy = !EBPFScalarType::generatesScalar(width);
-    }
 
-    if (memcpy) {
-        builder->append("memcpy(&");
+    if (a->right->is<IR::MethodCallExpression>()) {
+        auto mc = a->right->to<IR::MethodCallExpression>();
+        auto mi = P4::MethodInstance::resolve(mc, refMap, typeMap);
+        visit(mc->method);
+        bool first = true;
+        builder->append("(");
+        for (auto p : *mi->substitution.getParametersInArgumentOrder()) {
+            if (first) {
+                builder->append("");
+                visit(a->left);
+                first = false;
+            }
+            builder->append(", ");
+
+            if (p->direction == IR::Direction::Out ||
+                p->direction == IR::Direction::InOut)
+                builder->append("&");
+            auto arg = mi->substitution.lookup(p);
+            visit(arg);
+        }
+        builder->append(")");
+        builder->endOfStatement();
+    } else if(lebpfType->is<EBPFScalarType>() || rebpfType->is<EBPFScalarType>()){
+        scalar = lebpfType->to<EBPFScalarType>();
+        builder->append("memcpy(");
         visit(a->left);
-        builder->append(", &");
+        builder->append(", ");
         visit(a->right);
         builder->appendFormat(", %d)", scalar->bytesRequired());
-    } else {
+        builder->endOfStatement();
+    } else  {
         visit(a->left);
         builder->append(" = ");
         visit(a->right);
+        builder->endOfStatement();
     }
-    builder->endOfStatement();
     return false;
 }
 
@@ -295,7 +374,7 @@ bool CodeGenInspector::preorder(const IR::EmptyStatement*) {
 }
 
 bool CodeGenInspector::preorder(const IR::IfStatement* s) {
-    builder->append("if (");
+    builder->append("if( ");
     visit(s->condition);
     builder->append(") ");
     if (!s->ifTrue->is<IR::BlockStatement>()) {
@@ -310,14 +389,11 @@ bool CodeGenInspector::preorder(const IR::IfStatement* s) {
         builder->newline();
         builder->emitIndent();
         builder->append("else ");
-        if (!s->ifFalse->is<IR::BlockStatement>()) {
-            builder->increaseIndent();
-            builder->newline();
-            builder->emitIndent();
-        }
+        builder->increaseIndent();
+        builder->newline();
+        builder->emitIndent();
         visit(s->ifFalse);
-        if (!s->ifFalse->is<IR::BlockStatement>())
-            builder->decreaseIndent();
+        builder->decreaseIndent();
     }
     return false;
 }
