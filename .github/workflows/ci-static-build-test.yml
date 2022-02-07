@@ -23,8 +23,10 @@ jobs:
       uses: hendrikmuhs/ccache-action@v1
       with:
         key: static-${{ matrix.os }}
-        max-size: 1000M
+        max-size: 500M
 
     - name: Build (Linux)
       run: |
+        ls
+        mkdir -p .ccache
         DOCKER_BUILDKIT=1 docker build -t p4c --build-arg IMAGE_TYPE=build --build-arg ENABLE_UNIFIED_COMPILATION=ON --build-arg BUILD_STATIC_RELEASE=ON --build-arg ENABLE_GMP=ON .

@@ -25,6 +25,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # Delegate the build to tools/ci-build.
 COPY . /p4c/
-RUN --mount=type=bind,source=$HOME/.ccache,target=/root/.ccache,rw  chmod u+x /p4c/tools/ci-build.sh && /p4c/tools/ci-build.sh
+RUN --mount=type=bind,source=.ccache,target=/root/.ccache,rw  chmod u+x /p4c/tools/ci-build.sh && /p4c/tools/ci-build.sh
 # Set the workdir after building p4c.
 WORKDIR /p4c/
