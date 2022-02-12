@@ -6,7 +6,7 @@ set -e  # Exit on error.
 set -x  # Make command execution verbose
 
 # Check whether we can even write to ccache.
-touch .ccache/example_file
+touch /p4c/.ccache/example_file
 
 export P4C_DEPS="bison \
              build-essential \
