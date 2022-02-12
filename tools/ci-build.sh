@@ -65,7 +65,7 @@ pip3 install $P4C_PIP_PACKAGES
 # Build libbpf for eBPF tests.
 cd /p4c
 backends/ebpf/build_libbpf
-cd -
+cd /p4c
 
 # ! ------  BEGIN VALIDATION -----------------------------------------------
 
