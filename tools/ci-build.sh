@@ -5,6 +5,7 @@
 set -e  # Exit on error.
 set -x  # Make command execution verbose
 
+
 export P4C_DEPS="bison \
              build-essential \
              cmake \
@@ -47,8 +48,7 @@ export P4C_PIP_PACKAGES="ipaddr \
                           scapy==2.4.5 \
                           clang-format>=15.0.4 \
                           protobuf==3.18.1 \
-                          grpcio==1.44.0 \
-                          grpcio-tools==1.44.0"
+                          google-api-python-client"
 
 apt update
 apt install -y --no-install-recommends \
@@ -65,15 +65,12 @@ rm -rf /usr/local/etc/ccache.conf
 ln -sf /usr/bin/python3 /usr/bin/python
 ln -sf /usr/bin/pip3 /usr/bin/pip
 
-pip3 uninstall -y protobuf
-pip3 uninstall -y grpcio
-pip3 uninstall -y grpcio-tools
-pip3 uninstall -y google
-
 pip3 install wheel
 pip3 install $P4C_PIP_PACKAGES
+pip3 install --user $P4C_PIP_PACKAGES
 
-pip3 show protobuf
+# All imports should work now.
+printf "import google.rpc\nimport google.protobuf" | python3
 
 # Build libbpf for eBPF tests.
 cd /p4c
@@ -89,9 +86,7 @@ function install_ptf_ebpf_test_deps() (
   done
   export P4C_PTF_PACKAGES="gcc-multilib \
                            python3-six \
-                           libgmp-dev \
-                           libjansson-dev\
-                           protobuf-compiler"
+                           libgmp-dev"
   apt install -y --no-install-recommends ${P4C_PTF_PACKAGES}
 
   if apt-cache show ${LINUX_TOOLS}; then
