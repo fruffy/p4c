@@ -72,8 +72,8 @@ bool CoverableNodesScanner::preorder(const IR::MethodCallStatement *stmt) {
                 return false;
             }
             TableUtils::TableProperties properties;
-            TableUtils::checkTableImmutability(table, properties);
-            auto tableActionList = TableUtils::buildTableActionList(table);
+            TableUtils::checkTableImmutability(*table, properties);
+            auto tableActionList = TableUtils::buildTableActionList(*table);
             if (properties.tableIsImmutable) {
                 const auto *entries = table->getEntries();
                 if (entries != nullptr) {

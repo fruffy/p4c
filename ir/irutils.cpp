@@ -48,9 +48,9 @@ const Constant *getConstant(const Type *type, big_int v) {
     }
     // Constants are interned. Keys in the intern map are pairs of types and values.
     using key_t = std::tuple<int, std::type_index, bool, big_int>;
-    static std::map<key_t, const Constant *> constants;
+    static std::map<key_t, const Constant *> CONSTANTS;
 
-    auto *&result = constants[{tb->width_bits(), typeid(*type), tb->isSigned, v}];
+    auto *&result = CONSTANTS[{tb->width_bits(), typeid(*type), tb->isSigned, v}];
     if (result == nullptr) {
         result = new Constant(tb, v);
     }
@@ -60,9 +60,9 @@ const Constant *getConstant(const Type *type, big_int v) {
 
 const BoolLiteral *getBoolLiteral(bool value) {
     // Boolean literals are interned.
-    static std::map<bool, const BoolLiteral *> literals;
+    static std::map<bool, const BoolLiteral *> LITERALS;
 
-    auto *&result = literals[value];
+    auto *&result = LITERALS[value];
     if (result == nullptr) {
         result = new BoolLiteral(Type::Boolean::get(), value);
     }
@@ -81,7 +81,7 @@ const IR::Expression *getDefaultValue(const IR::Type *type, Util::SourceInfo src
     }
     if (type->is<IR::Type_Boolean>()) {
         // TODO: Use getBoolLiteral.
-        return new BoolLiteral(Type::Boolean::get(), false);
+        return new BoolLiteral(srcInfo, Type::Boolean::get(), false);
     }
     if (type->is<IR::Type_InfInt>()) {
         return new IR::Constant(srcInfo, 0);
@@ -112,8 +112,10 @@ const IR::Expression *getDefaultValue(const IR::Type *type, Util::SourceInfo src
     if (const auto *st = type->to<IR::Type_StructLike>()) {
         auto *vec = new IR::IndexedVector<IR::NamedExpression>();
         for (const auto *field : st->fields) {
-            auto value = getDefaultValue(field->type, srcInfo);
-            if (!value) return nullptr;
+            const auto *value = getDefaultValue(field->type, srcInfo);
+            if (value == nullptr) {
+                return nullptr;
+            }
             vec->push_back(new IR::NamedExpression(field->name, value));
         }
         const auto *resultType = st->getP4Type();
@@ -126,7 +128,9 @@ const IR::Expression *getDefaultValue(const IR::Type *type, Util::SourceInfo src
         auto *vec = new IR::Vector<IR::Expression>();
         for (const auto *field : tt->components) {
             const auto *value = getDefaultValue(field, srcInfo);
-            if (!value) return nullptr;
+            if (value == nullptr) {
+                return nullptr;
+            }
             vec->push_back(value);
         }
         return new IR::ListExpression(srcInfo, *vec);
@@ -135,7 +139,7 @@ const IR::Expression *getDefaultValue(const IR::Type *type, Util::SourceInfo src
         auto *vec = new IR::Vector<IR::Expression>();
         const auto *elementType = ts->elementType;
         for (size_t i = 0; i < ts->getSize(); i++) {
-            const IR::Expression *invalid;
+            const IR::Expression *invalid = nullptr;
             if (elementType->is<IR::Type_Header>()) {
                 invalid = new IR::InvalidHeader(elementType->getP4Type());
             } else {
