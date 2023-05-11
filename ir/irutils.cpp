@@ -73,7 +73,7 @@ const IR::Constant *convertBoolLiteral(const IR::BoolLiteral *lit) {
     return IR::getConstant(IR::getBitType(1), lit->value ? 1 : 0);
 }
 
-const IR::Expression *getDefaultValue(const IR::Type *type, Util::SourceInfo srcInfo,
+const IR::Expression *getDefaultValue(const IR::Type *type, const Util::SourceInfo &srcInfo,
                                       bool valueRequired) {
     if (const auto *tb = type->to<IR::Type_Bits>()) {
         // TODO: Use getConstant.
@@ -100,6 +100,9 @@ const IR::Expression *getDefaultValue(const IR::Type *type, Util::SourceInfo src
         return new IR::StringLiteral(srcInfo, cstring(""));
     }
     if (type->is<IR::Type_Varbits>()) {
+        if (valueRequired) {
+            P4C_UNIMPLEMENTED("%1%: No default value for varbit types.", srcInfo);
+        }
         ::error(ErrorType::ERR_UNSUPPORTED, "%1% default values for varbit types", srcInfo);
         return nullptr;
     }

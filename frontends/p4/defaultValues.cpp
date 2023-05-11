@@ -22,15 +22,14 @@ namespace P4 {
 
 const IR::Expression *DoDefaultValues::defaultValue(const IR::Expression *expression,
                                                     const IR::Type *type) {
-    Util::SourceInfo srcInfo = expression->srcInfo;
-    if (auto anyType = type->to<IR::Type_Any>()) {
+    if (const auto *anyType = type->to<IR::Type_Any>()) {
         type = typeMap->getSubstitution(anyType->to<IR::Type_Any>());
-        if (!type) {
+        if (type == nullptr) {
             ::error(ErrorType::ERR_TYPE_ERROR, "%1%: could not find default value", expression);
             return expression;
         }
     }
-    return getDefaultValue(type, srcInfo, false);
+    return getDefaultValue(type, expression->srcInfo, false);
 }
 
 const IR::Node *DoDefaultValues::postorder(IR::Dots *expression) {

@@ -60,7 +60,7 @@ const BoolLiteral *getBoolLiteral(bool value);
 /// Type_BaseList       ListExpression (fields filled with getDefaultValue)
 /// Type_Stack          HeaderStackExpression (fields filled with getDefaultValue)
 /// Definition: https://p4.org/p4-spec/docs/P4-16-working-spec.html#sec-default-values
-const IR::Expression *getDefaultValue(const Type *type, Util::SourceInfo srcInfo = {},
+const IR::Expression *getDefaultValue(const Type *type, const Util::SourceInfo &srcInfo = {},
                                       bool valueRequired = false);
 
 /// Converts a bool literal into a constant of type Type_Bits and width 1.
