@@ -1,0 +1,13 @@
+#ifndef BACKENDS_P4TOOLS_MODULES_MUTATE_REGISTER_H_
+#define BACKENDS_P4TOOLS_MODULES_MUTATE_REGISTER_H_
+
+@include_statements_var@
+
+namespace P4Tools::P4Mutate {
+
+inline void registerCompilerTargets() {
+@compiler_targets_var@}
+
+}  // namespace P4Tools::P4Mutate
+
+#endif /* BACKENDS_P4TOOLS_MODULES_MUTATE_REGISTER_H_ */

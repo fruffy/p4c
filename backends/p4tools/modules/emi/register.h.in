@@ -1,0 +1,13 @@
+#ifndef BACKENDS_P4TOOLS_MODULES_EMI_REGISTER_H_
+#define BACKENDS_P4TOOLS_MODULES_EMI_REGISTER_H_
+
+@include_statements_var@
+
+namespace P4Tools::Emi {
+
+inline void registerCompilerTargets() {
+@compiler_targets_var@}
+
+}  // namespace P4Tools::Emi
+
+#endif /* BACKENDS_P4TOOLS_MODULES_EMI_REGISTER_H_ */
