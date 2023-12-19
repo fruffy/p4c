@@ -962,6 +962,7 @@ if (ENABLE_GTESTS)
     ${CMAKE_CURRENT_SOURCE_DIR}/test/gtest/hidden_merged.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test/gtest/input_xbar.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test/gtest/ir_utils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/gtest/structural_compare.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test/gtest/initialize_mirror_io_select.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test/gtest/jbay_next_table.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test/gtest/mask_exact_match_hash_bits.cpp
