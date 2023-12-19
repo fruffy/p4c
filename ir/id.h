@@ -52,6 +52,7 @@ struct ID : Util::IHasSourceInfo {
     bool operator!=(cstring a) const { return name != a; }
     bool operator==(const char *a) const { return name == a; }
     bool operator!=(const char *a) const { return name != a; }
+    bool operator<(const ID &a) const { return name < a.name; }
     explicit operator bool() const { return name; }
     operator cstring() const { return name; }
     std::string string() const { return name.string(); }
