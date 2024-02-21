@@ -1,21 +1,26 @@
 #include "backends/p4tools/modules/testgen/targets/bmv2/bmv2.h"
 
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "backends/bmv2/common/annotations.h"
 #include "backends/p4tools/common/compiler/compiler_target.h"
 #include "backends/p4tools/common/compiler/midend.h"
-#include "control-plane/addMissingIds.h"
-#include "control-plane/p4RuntimeArchStandard.h"
 #include "frontends/common/options.h"
+#include "frontends/common/resolveReferences/referenceMap.h"
+#include "frontends/p4/typeChecking/typeChecker.h"
+#include "frontends/p4/typeMap.h"
 #include "lib/cstring.h"
+#include "lib/error.h"
+#include "midend/coverage.h"
 
 #include "backends/p4tools/modules/testgen/core/compiler_target.h"
 #include "backends/p4tools/modules/testgen/options.h"
 #include "backends/p4tools/modules/testgen/targets/bmv2/map_direct_externs.h"
 #include "backends/p4tools/modules/testgen/targets/bmv2/p4_asserts_parser.h"
 #include "backends/p4tools/modules/testgen/targets/bmv2/p4_refers_to_parser.h"
+#include "backends/p4tools/modules/testgen/targets/bmv2/p4runtime_translation.h"
 
 namespace P4Tools::P4Testgen::Bmv2 {
 
@@ -56,6 +61,10 @@ CompilerResultOrError Bmv2V1ModelCompilerTarget::runCompilerImpl(
 
     /// After the front end, get the P4Runtime API for the V1model architecture.
     auto p4runtimeApi = P4::P4RuntimeSerializer::get()->generateP4Runtime(program, "v1model");
+
+    if (::errorCount() > 0) {
+        return std::nullopt;
+    }
 
     program = runMidEnd(program);
     if (program == nullptr) {
@@ -114,12 +123,8 @@ MidEnd Bmv2V1ModelCompilerTarget::mkMidEnd(const CompilerOptions &options) const
     midEnd.addPasses({
         // Parse BMv2-specific annotations.
         new BMV2::ParseAnnotations(),
-        // Parse P4Runtime-specific annotations and insert missing IDs.
-        // Only do this for the protobuf back end.
-        TestgenOptions::get().testBackend == "PROTOBUF"
-            ? new P4::AddMissingIdAnnotations(
-                  refMap, typeMap, new P4::ControlPlaneAPI::Standard::V1ModelArchHandlerBuilder())
-            : nullptr,
+        new P4::TypeChecking(refMap, typeMap, true),
+        new PropagateP4RuntimeTranslation(*typeMap),
     });
     midEnd.addDefaultPasses();
 
