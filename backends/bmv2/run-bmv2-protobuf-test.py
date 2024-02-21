@@ -71,8 +71,8 @@ FILE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = Path(ARGS.rootdir).absolute()
 sys.path.append(str(ROOT_DIR))
 
-import testutils  # pylint: disable=wrong-import-position
-from ebpfenv import Bridge  # pylint: disable=wrong-import-position
+from backends.ebpf.targets.ebpfenv import Bridge  # pylint: disable=wrong-import-position
+from tools import testutils  # pylint: disable=wrong-import-position
 
 # 9559 is the default P4Runtime API server port
 P4RUNTIME_PORT: int = 9559
@@ -190,18 +190,20 @@ class VethEnv(ProtobufTestEnv):
     def run_switch_test(self, grpc_port: int, json_name: Path, info_name: Path) -> int:
         channel = grpc.insecure_channel(f'localhost:{grpc_port}')
         stub = p4runtime_pb2_grpc.P4RuntimeStub(channel)
+        
+        print(stub)
+        # request = p4runtime_pb2.SetForwardingPipelineConfigRequest()
+    
+        # # request.device_id = device_id
+        # request.election_id.high = 0
+        # request.election_id.low = 1
 
-        request = p4runtime_pb2.SetForwardingPipelineConfigRequest()
-        # request.device_id = device_id
-        request.election_id.high = 0
-        request.election_id.low = 1
-
-        config = request.config
-        with open(info_name, 'rb') as p4info_f:
-            config.p4info.ParseFromString(p4info_f.read())
-        with open(device_id, 'rb') as config_f:
-            config.p4_device_config = config_f.read()
-        request.action = p4runtime_pb2.SetForwardingPipelineConfigRequest.VERIFY_AND_COMMIT
+        # config = request.config
+        # with open(info_name, 'rb') as p4info_f:
+        #     config.p4info.ParseFromString(p4info_f.read())
+        # with open(device_id, 'rb') as config_f:
+        #     config.p4_device_config = config_f.read()
+        # request.action = p4runtime_pb2.SetForwardingPipelineConfigRequest.VERIFY_AND_COMMIT
         
         return 0
         
@@ -253,41 +255,41 @@ def run_test(options: Options) -> int:
     return result
 
 
-# def create_options(test_args: testutils.Any) -> testutils.Optional[Options]:
-#     """Parse the input arguments and create a processed options object."""
-#     options = Options()
-#     result = testutils.check_if_file(test_args.p4_file)
-#     if not result:
-#         return None
-#     options.p4_file = result
-#     testfile = test_args.testfile
-#     if not testfile:
-#         testutils.log.info("No test file provided. Checking for file in folder.")
-#         testfile = options.p4_file.with_suffix(".py")
-#     result = testutils.check_if_file(testfile)
-#     if not result:
-#         return None
-#     options.testfile = result
-#     testdir = test_args.testdir
-#     if not testdir:
-#         testutils.log.info("No test directory provided. Generating temporary folder.")
-#         testdir = tempfile.mkdtemp(dir=Path(".").absolute())
-#         # Generous permissions because the program is usually edited by sudo.
-#         os.chmod(testdir, 0o755)
-#     options.testdir = Path(testdir)
-#     options.rootdir = Path(test_args.rootdir)
-#     options.interface_count = test_args.interface_count
-#     # Configure logging.
-#     logging.basicConfig(
-#         filename=options.testdir.joinpath("test.log"),
-#         format="%(levelname)s: %(message)s",
-#         level=getattr(logging, test_args.log_level),
-#         filemode="w",
-#     )
-#     stderr_log = logging.StreamHandler()
-#     stderr_log.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
-#     logging.getLogger().addHandler(stderr_log)
-#     return options
+def create_options(test_args: testutils.Any) -> testutils.Optional[Options]:
+    """Parse the input arguments and create a processed options object."""
+    options = Options()
+    result = testutils.check_if_file(test_args.p4_file)
+    if not result:
+        return None
+    options.p4_file = result
+    testfile = test_args.testfile
+    if not testfile:
+        testutils.log.info("No test file provided. Checking for file in folder.")
+        testfile = options.p4_file.with_suffix(".py")
+    result = testutils.check_if_file(testfile)
+    if not result:
+        return None
+    options.testfile = result
+    testdir = test_args.testdir
+    if not testdir:
+        testutils.log.info("No test directory provided. Generating temporary folder.")
+        testdir = tempfile.mkdtemp(dir=Path(".").absolute())
+        # Generous permissions because the program is usually edited by sudo.
+        os.chmod(testdir, 0o755)
+    options.testdir = Path(testdir)
+    options.rootdir = Path(test_args.rootdir)
+    options.interface_count = test_args.interface_count
+    # Configure logging.
+    logging.basicConfig(
+        filename=options.testdir.joinpath("test.log"),
+        format="%(levelname)s: %(message)s",
+        level=getattr(logging, test_args.log_level),
+        filemode="w",
+    )
+    stderr_log = logging.StreamHandler()
+    stderr_log.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    logging.getLogger().addHandler(stderr_log)
+    return options
 
 
 if __name__ == "__main__":
@@ -303,6 +305,6 @@ if __name__ == "__main__":
     test_result = run_test(test_options)
     if not (ARGS.nocleanup or test_result != testutils.SUCCESS):
         testutils.log.info("Removing temporary test directory.")
-        testutils.del_dir(str(test_options.testdir))
+        # testutils.del_dir(str(test_options.testdir))
     sys.exit(test_result)
 

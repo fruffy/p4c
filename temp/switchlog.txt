@@ -1,0 +1,10 @@
+[20:58:31.308] [bmv2] [D] [thread 40613] Adding interface 0 as port 0
+[20:58:31.343] [bmv2] [D] [thread 40613] Adding interface 1 as port 1
+[20:58:31.403] [bmv2] [D] [thread 40613] Adding interface 2 as port 2
+[20:58:31.415] [bmv2] [D] [thread 40613] Adding interface 3 as port 3
+[20:58:31.442] [bmv2] [D] [thread 40613] Adding interface 4 as port 4
+[20:58:31.479] [bmv2] [D] [thread 40613] Adding interface 5 as port 5
+[20:58:31.495] [bmv2] [D] [thread 40613] Adding interface 6 as port 6
+[20:58:31.515] [bmv2] [D] [thread 40613] Adding interface 7 as port 7
+[20:58:31.557] [bmv2] [I] [thread 40613] Starting Thrift server on port 22000
+[20:58:31.557] [bmv2] [I] [thread 40613] Thrift server was started
