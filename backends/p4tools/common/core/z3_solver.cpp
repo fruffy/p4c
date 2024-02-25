@@ -545,7 +545,48 @@ bool Z3Translator::preorder(const IR::Mod *op) { return recurseBinary(op, z3::op
 
 bool Z3Translator::preorder(const IR::Add *op) { return recurseBinary(op, z3::operator+); }
 
+bool Z3Translator::preorder(const IR::AddSat *op) {
+    BUG_CHECK(op, "Z3Translator: encountered null node during translation");
+    const auto *bitsType = op->left->type->to<IR::Type_Bits>();
+    BUG_CHECK(bitsType,
+              "Z3Translator: saturating add is only for bit types or fixed-width signed integers, "
+              "receiving %1%",
+              op);
+    if (bitsType->isSigned) {
+        BUG("Z3Translator: signed addition is not unimplemented: %1%", op);
+    }
+    Z3Translator tLeft(solver);
+    Z3Translator tRight(solver);
+    op->left->apply(tLeft);
+    op->right->apply(tRight);
+    result = z3::operator+(tLeft.result, tRight.result);
+    auto max =
+        solver.get().ctx().bv_val((std::string(bitsType->size, '1')).c_str(), bitsType->size);
+
+    return z3::min(result, max);
+}
+
 bool Z3Translator::preorder(const IR::Sub *op) { return recurseBinary(op, z3::operator-); }
+
+bool Z3Translator::preorder(const IR::SubSat *op) {
+    BUG_CHECK(op, "Z3Translator: encountered null node during translation");
+    const auto *bitsType = op->left->type->to<IR::Type_Bits>();
+    BUG_CHECK(bitsType,
+              "Z3Translator: saturating add is only for bit types or fixed-width signed integers, "
+              "receiving %1%",
+              op);
+    if (bitsType->isSigned) {
+        BUG("Z3Translator: signed addition is not unimplemented: %1%", op);
+    }
+    Z3Translator tLeft(solver);
+    Z3Translator tRight(solver);
+    op->left->apply(tLeft);
+    op->right->apply(tRight);
+    result = z3::operator-(tLeft.result, tRight.result);
+    auto min = solver.get().ctx().bv_val("0", bitsType->size);
+
+    return z3::max(result, min);
+}
 
 bool Z3Translator::preorder(const IR::Mul *op) { return recurseBinary(op, z3::operator*); }
 

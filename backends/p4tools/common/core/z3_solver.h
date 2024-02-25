@@ -181,7 +181,9 @@ class Z3Translator : public virtual Inspector {
     bool preorder(const IR::Geq *op) override;
     bool preorder(const IR::Mod *op) override;
     bool preorder(const IR::Add *op) override;
+    bool preorder(const IR::AddSat *op) override;
     bool preorder(const IR::Sub *op) override;
+    bool preorder(const IR::SubSat *op) override;
     bool preorder(const IR::Mul *op) override;
     bool preorder(const IR::Div *op) override;
     bool preorder(const IR::Shl *op) override;
