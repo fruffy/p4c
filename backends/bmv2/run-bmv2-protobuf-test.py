@@ -8,8 +8,7 @@ import sys
 import tempfile
 import time
 import uuid
-import subprocess
-import json
+from google.protobuf import text_format
 from datetime import datetime
 from pathlib import Path
 
@@ -191,38 +190,38 @@ class VethEnv(ProtobufTestEnv):
     def run_switch_test(self, grpc_port: int, json_name: Path, info_name: Path) -> int:
         channel = grpc.insecure_channel(f'localhost:{grpc_port}')  
         stub = p4runtime_pb2_grpc.P4RuntimeStub(channel)  # <class 'p4.v1.p4runtime_pb2_grpc.P4RuntimeStub'>
+        testutils.log.info("Sending P4 config from file %s with P4info %s", json_name, info_name)
         request = p4runtime_pb2.SetForwardingPipelineConfigRequest()  # <class 'p4.v1.p4runtime_pb2.SetForwardingPipelineConfigRequest'>
         
         # The following fields are generated/assumed based upon https://github.com/p4lang/tutorials/blob/master/utils/p4runtime_lib/switch.py
         # and /home/zz3470/p4c-zzmic/build/_deps/p4runtime-src/proto/p4/v1/p4runtime.proto
         device_id = 1
-        request.election_id.high = 1
-        request.election_id.low = 1
         request.device_id = device_id
         config = request.config
-
+        
         try:
-            with open(info_name, 'rb') as p4info_f:
-                config.p4info.ParseFromString(p4info_f.read())
+            with open(info_name, "r", encoding="utf-8") as p4info_f:
+                text_format.Merge(p4info_f.read(), config.p4info, allow_unknown_field=True)
         except Exception as e:
             testutils.log.error("Failed to parse P4Info file: %s", e)
             return testutils.FAILURE
 
         try:
-            with open(json_name, 'rb') as config_f:  # Serializing JSON data
+            with open(json_name, "rb") as config_f:
                 config.p4_device_config = config_f.read()
         except Exception as e:
             testutils.log.error("Failed to read P4 device config file: %s", e)
             return testutils.FAILURE
 
         request.action = p4runtime_pb2.SetForwardingPipelineConfigRequest.VERIFY_AND_COMMIT
-        
         try:
             response = stub.SetForwardingPipelineConfig(request)
-            return testutils.SUCCESS
-        except grpc.RpcError as err:
-            testutils.log.error("Failed to set forwarding pipeline config: %s", err)
+            logging.debug("Response %s", response)
+        except Exception as e:
+            logging.error("Error during SetForwardingPipelineConfig")
+            logging.error(e)
             return testutils.FAILURE
+        return testutils.SUCCESS        
         
 def run_test(options: Options) -> int:
     """Define the test environment and compile the P4 target
