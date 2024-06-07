@@ -128,7 +128,7 @@ const ordered_map<cstring, IrMethod::info_t> IrMethod::Generate = {
       }}},
     {"isSemanticallyLess"_cs,
      {&NamedType::Bool(),
-      {new IrField(new ReferenceType(new NamedType(IrClass::nodeClass()), true), "a_")},
+      {new IrField(new ReferenceType(new NamedType(IrClass::nodeClass()), true), "a_"_cs)},
       CONST + IN_IMPL + OVERRIDE,
       [](IrClass *cl, Util::SourceInfo srcInfo, cstring body) -> cstring {
           std::stringstream buf;
@@ -376,7 +376,7 @@ void IrClass::generateMethods() {
             }
         }
         for (const auto *parent = getParent(); parent != nullptr; parent = parent->getParent()) {
-            if (!hasNoDirective("operator==")) {
+            if (!hasNoDirective("operator=="_cs)) {
                 std::stringstream buf;
                 buf << "{ return a.operator==(*this); }";
                 auto *eq_overload = new IrMethod("operator=="_cs, buf.str());
@@ -385,7 +385,7 @@ void IrClass::generateMethods() {
                 eq_overload->inImpl = true;
                 eq_overload->rtype = &NamedType::Bool();
                 eq_overload->args.push_back(
-                    new IrField(new ReferenceType(new NamedType(parent), true), "a"));
+                    new IrField(new ReferenceType(new NamedType(parent), true), "a"_cs));
                 eq_overload->isConst = true;
                 elements.push_back(eq_overload);
             }

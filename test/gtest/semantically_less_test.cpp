@@ -109,9 +109,9 @@ TEST(OperatorLess, Constants) {
     }
     // Check Strings
     {
-        const auto *a = new IR::StringLiteral(IR::Type_String::get(), "a");
-        const auto *b = new IR::StringLiteral(IR::Type_String::get(), "b");
-        const auto *a2 = new IR::StringLiteral(IR::Type_String::get(), "a");
+        const auto *a = new IR::StringLiteral(IR::Type_String::get(), cstring("a"));
+        const auto *b = new IR::StringLiteral(IR::Type_String::get(), cstring("b"));
+        const auto *a2 = new IR::StringLiteral(IR::Type_String::get(), cstring("a"));
 
         CHECK_LESS_FOR_P4C_EXPRESSION(a, b);
         CHECK_GREATER_FOR_P4C_EXPRESSION(b, a);
@@ -141,7 +141,7 @@ TEST(OperatorLess, Constants) {
 
 TEST(OperatorLess, MixedConstants) {
     const auto *t = IR::Type_Bits::get(16, false);
-    const auto *a = new IR::StringLiteral(IR::Type_String::get(), "a");
+    const auto *a = new IR::StringLiteral(IR::Type_String::get(), cstring("a"));
     const auto *b = new IR::Constant(t, 0);
     const auto *c = new IR::Constant(t, 10);
     const auto *d = new IR::BoolLiteral(false);
@@ -188,8 +188,8 @@ TEST(OperatorLess, ConstantVectors) {
     // Check that we correctly compare vectors with different nodes.
     const auto *p4 = new IR::IndexedVector<IR::Node>(new IR::BoolLiteral(false));
     const auto *p5 = new IR::IndexedVector<IR::Node>(new IR::Constant(t, 0));
-    const auto *p6 =
-        new IR::IndexedVector<IR::Node>(new IR::StringLiteral(IR::Type_String::get(), "a"));
+    const auto *p6 = new IR::IndexedVector<IR::Node>(
+        new IR::StringLiteral(IR::Type_String::get(), cstring("a")));
 
     CHECK_LESS_FOR_P4C_NODE_VECTOR(p5, p4);
     CHECK_GREATER_FOR_P4C_NODE_VECTOR(p4, p5);
