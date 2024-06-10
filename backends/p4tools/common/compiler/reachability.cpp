@@ -214,6 +214,7 @@ bool P4ProgramDCGCreator::preorder(const IR::ParserState *parserState) {
             BUG_CHECK(declaration != nullptr, "Parser state not found: %1%",
                       pathExpr->path->name.name);
             if (visited.count(declaration) != 0U) {
+                addEdge(declaration, declaration->name);
                 return false;
             }
             visit(declaration);
