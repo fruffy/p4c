@@ -17,6 +17,8 @@ limitations under the License.
 #ifndef P4_TOP4_TOP4_H_
 #define P4_TOP4_TOP4_H_
 
+#include <filesystem>
+
 #include "frontends/common/resolveReferences/resolveReferences.h"
 #include "ir/ir.h"
 #include "ir/visitor.h"
@@ -89,9 +91,9 @@ class ToP4 : public Inspector, ResolutionContext {
     /** If this is set to non-nullptr, some declarations
         that come from libraries and models are not
         emitted. */
-    cstring mainFile;
+    std::filesystem::path mainFile;
 
-    ToP4(Util::SourceCodeBuilder &builder, bool showIR, cstring mainFile = nullptr)
+    ToP4(Util::SourceCodeBuilder &builder, bool showIR, const std::filesystem::path &mainFile = {})
         : expressionPrecedence(DBPrint::Prec_Low),
           isDeclaration(true),
           showIR(showIR),
@@ -102,7 +104,7 @@ class ToP4 : public Inspector, ResolutionContext {
         visitDagOnce = false;
         setName("ToP4");
     }
-    ToP4(std::ostream *outStream, bool showIR, cstring mainFile = nullptr)
+    ToP4(std::ostream *outStream, bool showIR, const std::filesystem::path &mainFile = {})
         : expressionPrecedence(DBPrint::Prec_Low),
           isDeclaration(true),
           showIR(showIR),
