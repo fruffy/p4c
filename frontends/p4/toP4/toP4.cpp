@@ -145,9 +145,21 @@ void ToP4::dump(unsigned depth, const IR::Node *node, unsigned adjDepth) {
 
 bool ToP4::preorder(const IR::P4Program *program) {
     std::set<cstring> includesEmitted;
-
     bool first = true;
     dump(2);
+
+    // Try to initialize the mainFile from the program source info or the parser options.
+    if (mainFile.has_value() && mainFile.value().empty()) {
+        if (program->getSourceInfo().isValid()) {
+            mainFile = program->getSourceInfo().getSourceFile().c_str();
+        } else if (!P4CContext::get().options().file.empty()) {
+            mainFile = P4CContext::get().options().file;
+        } else {
+            ::P4::warning(
+                "No program base file specified. ToP4 might generate incorrect includes.");
+        }
+    }
+
     for (auto a : program->objects) {
         // Check where this declaration originates
         auto sourceFileOpt = ifSystemFile(a);
@@ -179,6 +191,7 @@ bool ToP4::preorder(const IR::P4Program *program) {
                     builder.append(">");
                     builder.newline();
                 } else {
+                    // auto relativPath = std::filesystem::relative(sourceFile.c_str(), mainFile);
                     builder.append("#include \"");
                     builder.append(sourceFile);
                     builder.append("\"");
