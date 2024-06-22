@@ -17,6 +17,9 @@ limitations under the License.
 #ifndef P4_TOP4_TOP4_H_
 #define P4_TOP4_TOP4_H_
 
+#include <filesystem>
+#include <utility>
+
 #include "frontends/common/resolveReferences/resolveReferences.h"
 #include "ir/ir.h"
 #include "ir/visitor.h"
@@ -89,27 +92,27 @@ class ToP4 : public Inspector, ResolutionContext {
     /** If this is set to non-nullptr, some declarations
         that come from libraries and models are not
         emitted. */
-    cstring mainFile;
+    std::filesystem::path mainFile;
 
-    ToP4(Util::SourceCodeBuilder &builder, bool showIR, cstring mainFile = nullptr)
+    ToP4(Util::SourceCodeBuilder &builder, bool showIR, std::filesystem::path mainFile = {})
         : expressionPrecedence(DBPrint::Prec_Low),
           isDeclaration(true),
           showIR(showIR),
           withinArgument(false),
           builder(builder),
           outStream(nullptr),
-          mainFile(mainFile) {
+          mainFile(std::move(mainFile)) {
         visitDagOnce = false;
         setName("ToP4");
     }
-    ToP4(std::ostream *outStream, bool showIR, cstring mainFile = nullptr)
+    ToP4(std::ostream *outStream, bool showIR, std::filesystem::path mainFile = {})
         : expressionPrecedence(DBPrint::Prec_Low),
           isDeclaration(true),
           showIR(showIR),
           withinArgument(false),
           builder(*new Util::SourceCodeBuilder()),
           outStream(outStream),
-          mainFile(mainFile) {
+          mainFile(std::move(mainFile)) {
         visitDagOnce = false;
         setName("ToP4");
     }
@@ -120,8 +123,7 @@ class ToP4 : public Inspector, ResolutionContext {
           showIR(false),
           withinArgument(false),
           builder(*new Util::SourceCodeBuilder()),
-          outStream(&std::cout),
-          mainFile(nullptr) {
+          outStream(&std::cout) {
         visitDagOnce = false;
         setName("ToP4");
     }
