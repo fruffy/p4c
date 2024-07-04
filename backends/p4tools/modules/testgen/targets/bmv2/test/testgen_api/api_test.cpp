@@ -6,13 +6,16 @@
 #include "backends/p4tools/modules/testgen/options.h"
 #include "backends/p4tools/modules/testgen/targets/bmv2/test_backend/protobuf.h"
 #include "backends/p4tools/modules/testgen/targets/bmv2/test_backend/protobuf_ir.h"
+#include "backends/p4tools/modules/testgen/test/gtest_utils.h"
 #include "backends/p4tools/modules/testgen/testgen.h"
 
 namespace Test {
 
 using namespace P4::literals;
 
-TEST(P4TestgenLibrary, GeneratesCorrectProtobufIrTest) {
+TEST_F(P4TestgenTest, GeneratesCorrectProtobufIrTest) {
+    auto autoContext = SetUp("bmv2", "v1model");
+
     std::stringstream streamTest;
     streamTest << R"p4(
 header ethernet_t {
@@ -57,10 +60,10 @@ V1Switch(parse(), verifyChecksum(), ingress(), egress(), computeChecksum(), depa
 )p4";
 
     auto source = P4_SOURCE(P4Headers::V1MODEL, streamTest.str().c_str());
-    auto compilerOptions = P4CContextWithOptions<CompilerOptions>::get().options();
-    compilerOptions.target = "bmv2"_cs;
-    compilerOptions.arch = "v1model"_cs;
-    auto &testgenOptions = P4Tools::P4Testgen::TestgenOptions::get();
+    auto testgenOptions =
+        P4Tools::CompileContext<P4Tools::P4Testgen::TestgenOptions>::get().options();
+    testgenOptions.target = "bmv2"_cs;
+    testgenOptions.arch = "v1model"_cs;
     testgenOptions.testBackend = "PROTOBUF_IR"_cs;
     testgenOptions.testBaseName = "dummy"_cs;
     // Create a bespoke packet for the Ethernet extract call.
@@ -70,8 +73,7 @@ V1Switch(parse(), verifyChecksum(), ingress(), egress(), computeChecksum(), depa
     testgenOptions.maxTests = 1;
 
     {
-        auto testListOpt =
-            P4Tools::P4Testgen::Testgen::generateTests(source, compilerOptions, testgenOptions);
+        auto testListOpt = P4Tools::P4Testgen::Testgen::generateTests(source, testgenOptions);
 
         ASSERT_TRUE(testListOpt.has_value());
         auto testList = testListOpt.value();
@@ -83,8 +85,7 @@ V1Switch(parse(), verifyChecksum(), ingress(), egress(), computeChecksum(), depa
     /// Now try running again with the test back end set to Protobuf. The result should be the same.
     testgenOptions.testBackend = "PROTOBUF"_cs;
 
-    auto testListOpt =
-        P4Tools::P4Testgen::Testgen::generateTests(source, compilerOptions, testgenOptions);
+    auto testListOpt = P4Tools::P4Testgen::Testgen::generateTests(source, testgenOptions);
 
     ASSERT_TRUE(testListOpt.has_value());
     auto testList = testListOpt.value();

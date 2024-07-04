@@ -12,40 +12,16 @@
 #include "backends/p4tools/modules/smith/core/target.h"
 #include "backends/p4tools/modules/smith/options.h"
 #include "backends/p4tools/modules/smith/register.h"
+#include "backends/p4tools/modules/smith/toolname.h"
 #include "frontends/common/parser_options.h"
 #include "frontends/p4/toP4/toP4.h"
 #include "ir/ir.h"
-#include "lib/compile_context.h"
-#include "lib/cstring.h"
 #include "lib/error.h"
 #include "lib/nullstream.h"
 
 namespace P4Tools::P4Smith {
 
 void Smith::registerTarget() { registerSmithTargets(); }
-
-int Smith::main(const std::vector<const char *> &args) {
-    // Register supported compiler targets.
-    registerTarget();
-
-    // Process command-line options.
-    auto &toolOptions = SmithOptions::get();
-    auto compileContext = toolOptions.process(args);
-    if (!compileContext) {
-        return EXIT_FAILURE;
-    }
-
-    // If not explicitly disabled, print basic information to standard output.
-    if (!toolOptions.disableInformationLogging) {
-        enableInformationLogging();
-    }
-
-    // Set up the compilation context.
-    AutoCompileContext autoContext(*compileContext);
-    // Instantiate a dummy program for now. In the future this can be a skeleton.
-    const IR::P4Program program;
-    return mainImpl(CompilerResult(program));
-}
 
 int Smith::mainImpl(const CompilerResult & /*result*/) {
     registerSmithTargets();

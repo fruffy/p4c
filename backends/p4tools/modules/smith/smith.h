@@ -17,7 +17,6 @@ class Smith : public AbstractP4cTool<SmithOptions> {
 
  public:
     virtual ~Smith() = default;
-    int main(const std::vector<const char *> &args);
 };
 
 }  // namespace P4Tools::P4Smith

@@ -3,6 +3,7 @@
 #include <string>
 
 #include "backends/p4tools/common/compiler/compiler_target.h"
+#include "backends/p4tools/common/compiler/context.h"
 #include "backends/p4tools/common/core/target.h"
 #include "ir/declaration.h"
 #include "ir/ir.h"
@@ -60,13 +61,14 @@ CmdStepper *TestgenTarget::getCmdStepper(ExecutionState &state, AbstractSolver &
     return get().getCmdStepperImpl(state, solver, programInfo);
 }
 
-CompilerResultOrError TestgenTarget::runCompilerImpl(const IR::P4Program *program) const {
-    program = runFrontend(program);
+CompilerResultOrError TestgenTarget::runCompilerImpl(const CompilerOptions &options,
+                                                     const IR::P4Program *program) const {
+    program = runFrontend(options, program);
     if (program == nullptr) {
         return std::nullopt;
     }
 
-    program = runMidEnd(program);
+    program = runMidEnd(options, program);
     if (program == nullptr) {
         return std::nullopt;
     }
@@ -85,6 +87,10 @@ CompilerResultOrError TestgenTarget::runCompilerImpl(const IR::P4Program *progra
 
     return {
         *new TestgenCompilerResult(CompilerResult(*program), coverage.getCoverableNodes(), dcg)};
+}
+
+ICompileContext *TestgenTarget::makeContext() const {
+    return new P4Tools::CompileContext<TestgenOptions>();
 }
 
 }  // namespace P4Tools::P4Testgen

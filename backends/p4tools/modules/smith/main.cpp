@@ -5,6 +5,7 @@
 
 #include "backends/p4tools/common/lib/logging.h"
 #include "backends/p4tools/modules/smith/smith.h"
+#include "backends/p4tools/modules/smith/toolname.h"
 #include "lib/crash.h"
 #include "lib/exceptions.h"
 #include "lib/timer.h"
@@ -21,7 +22,7 @@ int main(int argc, char **argv) {
     int result = EXIT_SUCCESS;
     try {
         Util::ScopedTimer timer("P4Smith Main");
-        result = P4Tools::P4Smith::Smith().main(args);
+        result = P4Tools::P4Smith::Smith().main(P4Tools::P4Smith::TOOL_NAME, args);
     } catch (const Util::CompilerBug &e) {
         std::cerr << "Internal error: " << e.what() << '\n';
         std::cerr << "Please submit a bug report with your code." << '\n';

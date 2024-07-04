@@ -50,7 +50,6 @@ class ParserOptions : public Util::Options {
 
  public:
     explicit ParserOptions(std::string_view defaultMessage = "Parse a P4 program");
-
     std::vector<const char *> *process(int argc, char *const argv[]) override;
     enum class FrontendVersion { P4_14, P4_16 };
 

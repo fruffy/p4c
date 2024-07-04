@@ -44,7 +44,7 @@ class P4TestOptions : public CompilerOptions {
     P4TestOptions &operator=(P4TestOptions &&) = delete;
 };
 /// Vector containing pairs of restrictions and nodes to which these restrictions apply.
-using P4TestContext = P4CContextWithOptions<P4TestOptions>;
+using P4TestContext = P4Tools::CompileContext<P4TestOptions>;
 using P4Tools::ConstraintsVector;
 
 ConstraintsVector loadExample(const char *curFile, bool flag) {
