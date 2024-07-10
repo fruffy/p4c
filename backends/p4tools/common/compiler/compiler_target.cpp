@@ -94,6 +94,10 @@ const IR::P4Program *CompilerTarget::runFrontend(const IR::P4Program *program) c
     auto frontEnd = mkFrontEnd();
     frontEnd.addDebugHook(options.getDebugHook());
     program = frontEnd.run(options, program);
+    P4::ReferenceMap refMap;
+    P4::TypeMap typeMap;
+    // Perform a last round of type checking.
+    program = program->apply(P4::TypeChecking(&refMap, &typeMap, true));
     if ((program == nullptr) || ::errorCount() > 0) {
         return nullptr;
     }
@@ -115,7 +119,12 @@ const IR::P4Program *CompilerTarget::runMidEnd(const IR::P4Program *program) con
 
     auto midEnd = mkMidEnd(options);
     midEnd.addDebugHook(options.getDebugHook(), true);
-    return program->apply(midEnd);
+    program = program->apply(midEnd);
+    P4::ReferenceMap refMap;
+    P4::TypeMap typeMap;
+    // Perform a last round of type checking.
+    program = program->apply(P4::TypeChecking(midEnd.getRefMap(), midEnd.getTypeMap(), true));
+    return program;
 }
 
 CompilerTarget::CompilerTarget(std::string_view toolName, const std::string &deviceName,
