@@ -247,7 +247,9 @@ def exec_process(args: Union[List[str], str], **extra_args: Any) -> ProcessResul
         # Rejoin the list for better readability.
         if isinstance(cmd, list):
             cmd = " ".join(cmd)
-        log.error('Error %s when executing "%s".', returncode, cmd)
+        out = exception.stdout
+        err = exception.stderr
+        log.error('Error %s when executing "%s": %s %s', returncode, cmd, out, err)
     except subprocess.TimeoutExpired as exception:
         if errpipe:
             out = errpipe.out
@@ -326,6 +328,31 @@ def del_dir(directory: Path) -> None:
     except OSError as exception:
         log.error(
             "Could not delete directory, reason:\n%s - %s.",
+            exception.filename,
+            exception.strerror,
+        )
+
+
+def link_file_into_directory(src: Union[List, Union[Path, str]], dst: Union[Path, str]) -> None:
+    if isinstance(dst, str):
+        dst = Path(dst)
+    if not dst.is_dir():
+        log.error("%s is not a directory", dst)
+        return
+    if not dst.exists():
+        dst.mkdir(parents=True)
+    """Link a file or a list of files to a destination."""
+    try:
+        if isinstance(src, list):
+            for src_file in src:
+                src_file = Path(src_file)
+                dst.joinpath(src_file.name).symlink_to(src_file)
+        else:
+            src = Path(src)
+            dst.joinpath(src.name).symlink_to(src)
+    except OSError as exception:
+        log.error(
+            "Could not link file, reason:\n%s - %s.",
             exception.filename,
             exception.strerror,
         )
