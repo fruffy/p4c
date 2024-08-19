@@ -29,8 +29,18 @@ sys.path.append(str(FILE_DIR.joinpath("../../..")))
 from tools import testutils  # pylint: disable=wrong-import-position
 
 
+class BridgeConfiguration:
+    """Configuration options for the bridge."""
+
+    def __init__(self, mtu: int = 9000, bpf_kernel_stats: bool = False):
+        # Maximum transmission unit for each bridge port.
+        self.mtu = mtu
+        # Enable eBPF kernel stats, these can be queried by the bpftool.
+        self.bpf_kernel_stats: bool = bpf_kernel_stats
+
+
 class Bridge:
-    def __init__(self, namespace: str):
+    def __init__(self, namespace: str, config: BridgeConfiguration = BridgeConfiguration()):
         # Identifier of the namespace.
         self.ns_name: str = namespace
         # Name of the central bridge.
@@ -39,6 +49,8 @@ class Bridge:
         self.br_ports: List[str] = []
         # List of the veth pair edge ports.
         self.edge_ports: List[str] = []
+        # General options to configure the bridge.
+        self.config: BridgeConfiguration = config
 
     def ns_init(self) -> int:
         """Initialize the namespace."""
@@ -47,12 +59,15 @@ class Bridge:
         if result.returncode != testutils.SUCCESS:
             testutils.log.error("Failed to create namespace %s", self.ns_name)
             return result.returncode
+        if self.config.bpf_kernel_stats:
+            testutils.log.info("Enabling eBPF kernel stats")
+            self.ns_exec("sysctl -w kernel.bpf_stats_enabled=1")
         return self.ns_exec("ip link set dev lo up")
 
     def ns_del(self) -> int:
         """Delete the namespace and with it all the process running in it."""
         cmd = f"ip netns pids {self.ns_name} | xargs -r kill; ip netns del {self.ns_name}"
-        result = testutils.exec_process(cmd, shell=True)
+        result = testutils.exec_process(cmd, shell=True, capture_output=True)
         if result.returncode != testutils.SUCCESS:
             testutils.log.error("Failed to delete namespace %s", self.ns_name)
         return result.returncode
@@ -109,10 +124,12 @@ class Bridge:
         avoid ICMPv6 spam."""
         # We do not care about failures here
         self.ns_exec(f"ip link set dev {br_name} up")
-        self.ns_exec(f"ip link set dev {br_name} mtu 9000")
+        self.ns_exec(f"ip link set dev {br_name} mtu {self.config.mtu}")
         # Prevent the broadcasting of ipv6 link discovery messages
         self.ns_exec("sysctl -w net.ipv6.conf.all.disable_ipv6=1")
-        self.ns_exec("sysctl -w net.ipv6.conf.default.disable_ipv6=1")
+        self.ns_exec("sysctl -w net.ipv6.conf.all.autoconf=0")
+        self.ns_exec("sysctl -w net.ipv6.conf.all.accept_ra=0")
+
         # Also filter igmp packets, -w is necessary because of a race condition
         self.ns_exec("iptables -w -A OUTPUT -p 2 -j DROP")
         return testutils.SUCCESS
@@ -130,7 +147,7 @@ class Bridge:
         result = self.ns_exec(cmd)
         if result != testutils.SUCCESS:
             return result
-        cmd = f"ip link set dev {port_name} mtu 9000"
+        cmd = f"ip link set dev {port_name} mtu {self.config.mtu}"
         return self.ns_exec(cmd)
 
     def attach_interfaces(self, num_ifaces: int) -> int:
