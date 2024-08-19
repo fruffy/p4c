@@ -8,7 +8,7 @@
 #ifndef __PNA_P4__
 #define __PNA_P4__
 
-#include<core.p4>
+#include <core.p4>
 
 /**
  *   P4-16 declaration of the Portable NIC Architecture
